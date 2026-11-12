@@ -429,6 +429,48 @@ class RetroSoundEngine {
       }
       this.activeVoiceSource = null;
     }
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  private speakBritishBrowserFallback(text: string): void {
+    if (this.isMuted) return;
+    try {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const cleanSpeech = text
+        .replace(/:\)/g, '')
+        .replace(/\.{2,}/g, ', ')
+        .replace(/\n+/g, '. ')
+        .trim();
+      if (!cleanSpeech) return;
+
+      const utter = new SpeechSynthesisUtterance(cleanSpeech);
+      utter.lang = 'en-GB';
+      utter.rate = 1.02;
+      utter.pitch = 0.88;
+
+      const voices = window.speechSynthesis.getVoices();
+      const britishVoice =
+        voices.find(
+          (v) =>
+            /en[-_]GB/i.test(v.lang) &&
+            /(male|daniel|arthur|oliver|george|ryan|uk english male)/i.test(v.name)
+        ) ||
+        voices.find((v) => /en[-_]GB/i.test(v.lang)) ||
+        voices.find((v) => /en/i.test(v.lang));
+      if (britishVoice) {
+        utter.voice = britishVoice;
+      }
+      window.speechSynthesis.speak(utter);
+    } catch {
+      // Ignore speech synthesis errors
+    }
   }
 
   public runQuickTypewriter(
@@ -558,11 +600,16 @@ class RetroSoundEngine {
         }
       }
 
+      // If running on static GitHub Pages without server audioBuffer, speak with British Web Speech API!
+      if (!slide.audioBuffer && !this.isMuted) {
+        this.speakBritishBrowserFallback(normalizedText);
+      }
+
       // Wall-clock fallback (also kicks in voice audio mid-slide if user touches the screen on mobile!)
       let audioStartedMidSlide = false;
       const durationMs = slide.audioBuffer
         ? Math.max(1200, slide.audioBuffer.duration * 1000)
-        : Math.max(1400, fullUpperText.length * 48);
+        : Math.max(1750, fullUpperText.length * 56);
       const started = performance.now();
 
       const interval = setInterval(() => {

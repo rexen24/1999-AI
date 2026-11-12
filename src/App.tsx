@@ -14,6 +14,10 @@ import {
 } from './utils/soundEngine';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { PWAInstallModal } from './components/PWAInstallModal';
+import {
+  generateStandaloneQueryResponse,
+  generateStandaloneLiveEvent,
+} from './utils/standaloneEngine';
 
 type ScreenState = 'BOOTING' | 'IDLE' | 'LISTENING' | 'SEARCHING' | 'FOUND_BELL' | 'SPEAKING';
 
@@ -714,7 +718,7 @@ export default function App() {
 
       try {
         const deviceInfo = await gatherLivePhoneTelemetry();
-        const res = await fetch('/api/boot', {
+        const data = await fetch('/api/boot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -726,8 +730,20 @@ export default function App() {
             extraDetail: options?.extraDetail || '',
             history: historyRef.current,
           }),
-        });
-        const data = await res.json();
+        })
+          .then(async (r) => {
+            if (!r.ok) throw new Error('Static host');
+            return await r.json();
+          })
+          .catch(() =>
+            generateStandaloneLiveEvent(
+              eventType,
+              options?.awaySeconds ?? 6,
+              distractionCountRef.current,
+              deviceInfo,
+              options?.extraDetail || ''
+            )
+          );
         if (Array.isArray(data.slides) && data.slides.length > 0 && !micEnabledRef.current) {
           if (!options?.clearFrozenDraft && userDraftRef.current.length > 0) {
             return;
@@ -932,7 +948,7 @@ export default function App() {
           const base64Data = (reader.result as string).split(',')[1];
           try {
             const deviceInfo = await gatherLivePhoneTelemetry();
-            const res = await fetch('/api/voice-chat', {
+            const data = await fetch('/api/voice-chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -941,9 +957,23 @@ export default function App() {
                 history: historyRef.current,
                 deviceInfo,
               }),
-            });
-
-            const data = await res.json();
+            })
+              .then(async (r) => {
+                if (!r.ok) throw new Error('Static host');
+                return await r.json();
+              })
+              .catch(async () => {
+                const fallback = await generateStandaloneQueryResponse(
+                  'Speaking into microphone',
+                  historyRef.current,
+                  deviceInfo
+                );
+                return {
+                  ...fallback,
+                  userTranscript: '[VOICE INPUT]',
+                  isQuestion: true,
+                };
+              });
             const slides: SlideSpec[] =
               Array.isArray(data.slides) && data.slides.length > 0
                 ? data.slides
@@ -1306,8 +1336,11 @@ export default function App() {
     });
   }, [createDecodedSlidePromises]);
 
-  // Automatically boot on app open
+  // Automatically boot on app open (and open Install Modal if launched via ?install=1 link)
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('install=1')) {
+      setInstallModalOpen(true);
+    }
     if (bootHasRunRef.current) return;
     bootHasRunRef.current = true;
     runBootSequence();
@@ -1371,7 +1404,7 @@ export default function App() {
       try {
         const deviceInfo = await gatherLivePhoneTelemetry(trimmed);
 
-        const queryRes = await fetch('/api/query', {
+        const queryData = await fetch('/api/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1379,9 +1412,12 @@ export default function App() {
             history,
             deviceInfo,
           }),
-        });
-
-        const queryData = await queryRes.json();
+        })
+          .then(async (r) => {
+            if (!r.ok) throw new Error('Static host');
+            return await r.json();
+          })
+          .catch(() => generateStandaloneQueryResponse(trimmed, history, deviceInfo));
         const slides: SlideSpec[] =
           Array.isArray(queryData.slides) && queryData.slides.length > 0
             ? queryData.slides
@@ -1952,10 +1988,15 @@ export default function App() {
       </form>
 
       {/* Top Subtle Replay / Mic / App Download Trigger */}
-      <div className="w-full flex items-center justify-between z-20 shrink-0">
+      <div
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full flex items-center justify-between z-30 shrink-0"
+      >
         {lastReplySlides && screenState === 'IDLE' ? (
           <button
             type="button"
+            onPointerDown={(e) => e.preventDefault()}
             onClick={(e) => {
               e.stopPropagation();
               soundEngine.unlockAudio();
@@ -1974,7 +2015,7 @@ export default function App() {
                 }
               );
             }}
-            className="min-h-[40px] px-1 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-45 hover:opacity-100 cursor-pointer"
+            className="min-h-[44px] px-2 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-65 hover:opacity-100 cursor-pointer touch-manipulation"
           >
             REPLAY
           </button>
@@ -1985,14 +2026,15 @@ export default function App() {
         <div className="flex items-center gap-3 sm:gap-4">
           <button
             type="button"
+            onPointerDown={(e) => e.preventDefault()}
             onClick={toggleVoiceMode}
             disabled={
               screenState === 'SEARCHING' ||
               screenState === 'FOUND_BELL' ||
               screenState === 'BOOTING'
             }
-            className={`min-h-[44px] px-2 flex items-center gap-1.5 font-cmd text-lg sm:text-xl uppercase phosphor-text cursor-pointer ${
-              micEnabled ? 'opacity-100' : 'opacity-45 hover:opacity-100'
+            className={`min-h-[44px] px-2.5 flex items-center gap-1.5 font-cmd text-lg sm:text-xl uppercase phosphor-text cursor-pointer touch-manipulation ${
+              micEnabled ? 'opacity-100' : 'opacity-65 hover:opacity-100'
             }`}
             aria-label={micEnabled ? 'Turn off microphone' : 'Turn on microphone'}
           >
@@ -2011,6 +2053,7 @@ export default function App() {
 
           <button
             type="button"
+            onPointerDown={(e) => e.preventDefault()}
             onClick={async (e) => {
               e.stopPropagation();
               soundEngine.unlockAudio();
@@ -2022,7 +2065,7 @@ export default function App() {
                 setInstallModalOpen(true);
               }
             }}
-            className="min-h-[44px] px-2 flex items-center gap-1.5 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-45 hover:opacity-100 cursor-pointer"
+            className="min-h-[44px] px-2.5 flex items-center gap-1.5 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-75 hover:opacity-100 cursor-pointer touch-manipulation border border-[#E2F6C2]/40 bg-[#0A261E]/40"
             aria-label="Download app to phone"
           >
             <Download className="w-4 h-4" />

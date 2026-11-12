@@ -72,9 +72,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="1999 AI" />
-    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Michroma&family=VT323&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
@@ -82,5 +82,51 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      (function () {
+        function injectPrebuiltBundle() {
+          if (window.__1999_BOOTED__ || window.__1999_BUNDLE_INJECTED__) return;
+          window.__1999_BUNDLE_INJECTED__ = true;
+          var link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = './gh-pages.css';
+          link.onerror = function () {
+            var altLink = document.createElement('link');
+            altLink.rel = 'stylesheet';
+            altLink.href = './public/gh-pages.css';
+            document.head.appendChild(altLink);
+          };
+          document.head.appendChild(link);
+
+          var s = document.createElement('script');
+          s.type = 'module';
+          s.src = './gh-pages.js';
+          s.onerror = function () {
+            var altScript = document.createElement('script');
+            altScript.type = 'module';
+            altScript.src = './public/gh-pages.js';
+            document.body.appendChild(altScript);
+          };
+          document.body.appendChild(s);
+        }
+
+        // If hosted on github.io and raw /src/main.tsx tag is still present (unbuilt branch deploy), inject immediately!
+        if (
+          window.location.hostname.indexOf('github.io') !== -1 &&
+          document.querySelector('script[src*="/src/main.tsx"]')
+        ) {
+          injectPrebuiltBundle();
+        } else {
+          window.addEventListener('load', function () {
+            setTimeout(function () {
+              var root = document.getElementById('root');
+              if (!window.__1999_BOOTED__ && (!root || root.children.length === 0)) {
+                injectPrebuiltBundle();
+              }
+            }, 350);
+          });
+        }
+      })();
+    </script>
   </body>
 </html>
