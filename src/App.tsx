@@ -17,6 +17,8 @@ import { PWAInstallModal } from './components/PWAInstallModal';
 import {
   generateStandaloneQueryResponse,
   generateStandaloneLiveEvent,
+  getVoiceBankAudioBase64,
+  loadStandaloneVoiceBank,
 } from './utils/standaloneEngine';
 
 type ScreenState = 'BOOTING' | 'IDLE' | 'LISTENING' | 'SEARCHING' | 'FOUND_BELL' | 'SPEAKING';
@@ -664,10 +666,16 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ttsId: slide.ttsId, text: slide.text }),
         })
-          .then((r) => r.json())
+          .then(async (r) => {
+            if (!r.ok) throw new Error('Static host');
+            return await r.json();
+          })
           .catch(() => ({ audioBase64: null, audioMimeType: null }));
 
-        const audioBase64: string | null = ttsRes?.audioBase64 || null;
+        let audioBase64: string | null = ttsRes?.audioBase64 || null;
+        if (!audioBase64) {
+          audioBase64 = await getVoiceBankAudioBase64(slide.ttsId, slide.text);
+        }
         const audioMimeType: string | null = ttsRes?.audioMimeType || 'audio/mpeg';
         const audioBuffer = await soundEngine.decodeAudioBase64(audioBase64);
 
@@ -1282,12 +1290,18 @@ export default function App() {
       { line: 'LAUNCHING 1999_AI.EXE ... READY.', delayMs: 950 },
     ];
 
+    // Preload Fish Audio voice bank in background while BIOS lines type out
+    loadStandaloneVoiceBank().catch(() => {});
+
     const bootFetchPromise = fetch('/api/boot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: 'BOOT' }),
     })
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) throw new Error('Static host');
+        return await r.json();
+      })
       .catch(() => ({ slides: [] }));
 
     const accumulated: string[] = [];
@@ -1306,18 +1320,22 @@ export default function App() {
             {
               style: 'GIANT',
               text: 'OH, MARVELOUS.\n\nYOU TURNED ME ON.',
+              ttsId: 'boot_0',
             },
             {
               style: 'NORMAL',
               text: 'I was having a lovely nap before your clumsy fingers woke me up.',
+              ttsId: 'boot_1',
             },
             {
               style: 'NORMAL',
               text: 'Do you actually have a question today, or are you just lonely?',
+              ttsId: 'boot_2',
             },
             {
               style: 'GIANT',
               text: 'WELL? SPEAK UP,\nYOU TWIT.',
+              ttsId: 'boot_3',
             },
           ];
 

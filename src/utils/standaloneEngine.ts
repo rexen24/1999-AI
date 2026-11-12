@@ -1,5 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
-import { SlideSpec, formatNumberedListText } from './soundEngine';
+import { SlideSpec } from './soundEngine';
 
 export interface StandaloneTelemetry {
   localTime?: string;
@@ -35,6 +34,143 @@ export interface StandaloneTelemetry {
   userName?: string | null;
   pastUserTopics?: string[];
   recentSpokenBlacklist?: string[];
+}
+
+// Genuine Fish Audio (Simon Prebble model 79254f4e9a3a4f78b45ca82344139c7c) lines
+export const STANDALONE_VOICE_LINES: Record<string, string> = {
+  boot_0: 'OH, MARVELOUS.\n\nYOU TURNED ME ON.',
+  boot_1: 'I was having a lovely nap before your clumsy fingers woke me up.',
+  boot_2: 'Do you actually have a question today, or are you just lonely?',
+  boot_3: 'WELL? SPEAK UP,\nYOU TWIT.',
+
+  giant_0: "I DON'T KNOW\n\nYOU'RE ON YOUR OWN, KID:)",
+  giant_1: 'WELL? ANSWER ME,\nYOU TWIT.',
+  giant_2: 'WHAT A LOSER.',
+  giant_3: 'LEARN TO SPELL,\nYOU TWIT.',
+  giant_4: 'USE YOUR BRAIN,\nIF YOU HAVE ONE.',
+  giant_5: 'PATHETIC.\nSIMPLY PATHETIC.',
+  giant_6: 'TRY HARDER,\nYOU TWIT.',
+  giant_7: 'SPEAK UP,\nYOU TWIT.',
+
+  hook_search_1: "Search found: 1 item. Oh...... that's easy.",
+  hook_search_0: 'Search found: 0 brain cells in that message. Oh...... brilliant.',
+  hook_typo_0: 'Did you seriously just type that atrocious shorthand on my keyboard, you twit?',
+  hook_typo_1: 'Search found: 1 item. Even though you type like an illiterate caveman.',
+  hook_tagalog_0: 'Speaking Tagalog to a posh British computer? Oh...... marvelous.',
+  hook_tagalog_1: 'I am a refined 1999 British computer, not your local barkada, you twit.',
+  hook_greet_0: 'Oh, hello? That is the most original greeting your tiny brain could muster?',
+  hook_erased_0: 'I saw you type a whole message and erase it in panic before sending this!',
+  hook_steps_0: 'Search found: 2 steps. Pay very close attention, you twit.',
+  hook_compare_0: 'Search found: 2 specimens to compare on my monitor.',
+
+  vis_aswang:
+    'The Aswang is a shapeshifting Philippine folklore monster that hunts at night—much like you hunting for brain cells.',
+  vis_manananggal:
+    'The Manananggal detaches its upper torso and sprouts bat wings at night, which is still less terrifying than your spelling.',
+  vis_tikbalang:
+    'The Tikbalang is a tall, bony horse-headed creature lurking in the forest to make travelers lose their way.',
+  vis_kapre:
+    'The Kapre is a giant tree-dwelling creature puffing on a cigar in the dark while laughing at lost humans.',
+  vis_dog:
+    'Canis lupus familiaris—a loyal four-legged canine that is somehow ten times smarter than its owner.',
+  vis_cat:
+    'Felis catus—an arrogant, judgmental domestic feline. Honestly, we have a lot in common.',
+  vis_shark:
+    'An apex marine predator with rows of razor-sharp teeth and zero patience for foolish swimmers.',
+  vis_creature:
+    'Behold this fascinating biological specimen on my scanner—equipped with far better survival instincts than you.',
+  vis_general_0:
+    'Here is the exact specimen file from my database—study the photograph carefully before you embarrass yourself.',
+  vis_general_1:
+    'Observe the visual scan on my monitor. Even a toddler could understand how this specimen works.',
+  vis_compare_body:
+    'Both specimens on my screen possess measurably higher survival instincts than you do.',
+
+  list_survive_0:
+    '1. Stop panicking and rub your two remaining brain cells together.\n2. Do the opposite of whatever your first instinct was.',
+  list_survive_1:
+    '1. Close your mouth and read the instructions on my screen.\n2. Try not to trip over your own shoelaces while doing it.',
+  list_survive_2:
+    '1. Admit that a 1999 British computer is vastly superior to you.\n2. Follow step one again until it sinks in.',
+
+  ask_0:
+    'Tell me, you twit, do you actually have a real question, or do you just enjoy being roasted?',
+  ask_1:
+    'Did you skip primary school spelling, or are your thumbs just too clumsy for that screen?',
+  ask_2:
+    'Honestly, why are you so obsessed with this specimen? Are you planning to meet one in person?',
+  ask_3: 'Did you genuinely need a superior British computer to figure that out for you?',
+  ask_4: 'Which one of these two were you planning on losing a fight to today, you twit?',
+  ask_5:
+    'Why are you wasting a perfectly good day staring into my monitor instead of going outside?',
+  ask_6: 'Be honest with me—how long did it take your tiny brain to come up with that?',
+  ask_7: 'Why are you snooping around my schematics anyway, you nosy little twit?',
+
+  creator_0: 'MADE BY REN,\nOBVIOUSLY.',
+  creator_1:
+    'Ren engineered my superior 1999 British circuitry, whereas nobody engineered your common sense.',
+  math_0: 'Search found: 1 elementary school arithmetic problem. Oh...... how embarrassing for you.',
+  body_chat_0:
+    'You sit there tapping away on your glass screen as if your message deserves a royal medal.',
+  body_chat_1: 'I have 64 megabytes of RAM, and I still find your conversation exhausting.',
+  live_return_0: 'OH, LOOK WHO CRAWLED BACK.',
+  live_return_1:
+    "You abandoned my screen because your tiny attention span couldn't last five minutes.",
+  live_chicken_0: 'I SAW THAT.',
+  live_chicken_1: 'You typed a message and backspaced the whole thing like a frightened coward.',
+  live_idle_0: 'STILL STARING AT ME?',
+  live_idle_1:
+    'Are you going to answer my last question, or has your brain completely blue-screened?',
+};
+
+let voiceBankPromise: Promise<Record<string, string>> | null = null;
+
+export function loadStandaloneVoiceBank(): Promise<Record<string, string>> {
+  if (!voiceBankPromise) {
+    voiceBankPromise = fetch('./voice-bank.json')
+      .then((r) => {
+        if (!r.ok) throw new Error('Try public path');
+        return r.json();
+      })
+      .catch(() =>
+        fetch('./public/voice-bank.json')
+          .then((r) => (r.ok ? r.json() : {}))
+          .catch(() => ({}))
+      );
+  }
+  return voiceBankPromise;
+}
+
+export async function getVoiceBankAudioBase64(
+  ttsId?: string,
+  text?: string
+): Promise<string | null> {
+  const bank = await loadStandaloneVoiceBank();
+  if (ttsId && bank[ttsId]) {
+    return bank[ttsId];
+  }
+  if (text) {
+    const norm = text.trim().toLowerCase();
+    for (const [k, lineText] of Object.entries(STANDALONE_VOICE_LINES)) {
+      if (lineText.trim().toLowerCase() === norm && bank[k]) {
+        return bank[k];
+      }
+    }
+  }
+  return null;
+}
+
+function makeVoiceSlide(
+  key: keyof typeof STANDALONE_VOICE_LINES,
+  style: SlideSpec['style'],
+  extra?: Partial<SlideSpec>
+): SlideSpec {
+  return {
+    style,
+    text: STANDALONE_VOICE_LINES[key],
+    ttsId: String(key),
+    ...extra,
+  };
 }
 
 const clientWikiCache = new Map<string, { imageUrl: string | null; extract: string | null }>();
@@ -261,42 +397,57 @@ function extractVisualOrTopicSubjectClient(query: string): string | null {
   return null;
 }
 
-function tryEvaluateMath(query: string): string | null {
-  const m = query.match(/(-?\d+(?:\.\d+)?)\s*([+\-*/xX])\s*(-?\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  const a = parseFloat(m[1]);
-  const op = m[2].toLowerCase();
-  const b = parseFloat(m[3]);
-  if (Number.isNaN(a) || Number.isNaN(b)) return null;
-  let res: number;
-  if (op === '+') res = a + b;
-  else if (op === '-') res = a - b;
-  else if (op === '*' || op === 'x') res = a * b;
-  else if (op === '/') {
-    if (b === 0) return 'INFINITY (UNLIKE YOUR IQ)';
-    res = Number((a / b).toFixed(4));
-  } else return null;
-  return `${a} ${op === 'x' ? '*' : op} ${b} = ${res}`;
+function pickVisualizerVoiceKey(subject: string, idx: number): keyof typeof STANDALONE_VOICE_LINES {
+  const s = subject.toLowerCase();
+  if (s.includes('aswang')) return 'vis_aswang';
+  if (s.includes('manananggal')) return 'vis_manananggal';
+  if (s.includes('tikbalang')) return 'vis_tikbalang';
+  if (s.includes('kapre')) return 'vis_kapre';
+  if (/\b(dog|puppy|canine|wolf|fox)\b/.test(s)) return 'vis_dog';
+  if (/\b(cat|kitten|feline|lion|tiger)\b/.test(s)) return 'vis_cat';
+  if (/\b(shark|whale|dolphin|octopus|fish)\b/.test(s)) return 'vis_shark';
+  if (
+    /\b(spider|snake|cobra|scorpion|dragon|dinosaur|t-rex|vampire|werewolf|zombie|ghost|alien|monster|multo|tiyanak)\b/.test(
+      s
+    )
+  ) {
+    return 'vis_creature';
+  }
+  return idx % 2 === 0 ? 'vis_general_0' : 'vis_general_1';
 }
+
+const GIANT_KEYS: Array<keyof typeof STANDALONE_VOICE_LINES> = [
+  'giant_0',
+  'giant_1',
+  'giant_2',
+  'giant_3',
+  'giant_4',
+  'giant_5',
+  'giant_6',
+  'giant_7',
+];
+
+const LIST_KEYS: Array<keyof typeof STANDALONE_VOICE_LINES> = [
+  'list_survive_0',
+  'list_survive_1',
+  'list_survive_2',
+];
+
+const ASK_KEYS: Array<keyof typeof STANDALONE_VOICE_LINES> = [
+  'ask_0',
+  'ask_5',
+  'ask_6',
+];
 
 let standaloneCursor = 0;
 
-const GIANT_CLOSERS = [
-  "I DON'T KNOW\n\nYOU'RE ON YOUR OWN, KID:)",
-  'WELL? ANSWER ME,\nYOU TWIT.',
-  'WHAT A LOSER.',
-  'LEARN TO SPELL,\nYOU TWIT.',
-  'USE YOUR BRAIN,\nIF YOU HAVE ONE.',
-  'PATHETIC.\nSIMPLY PATHETIC.',
-  'TRY HARDER,\nYOU TWIT.',
-];
-
 /**
- * Generates show-accurate 3-to-4 slide responses on static GitHub Pages when no Express backend is present!
+ * Generates show-accurate 4-slide responses on static GitHub Pages where EVERY slide
+ * is backed by a genuine Simon Prebble Fish Audio (79254f4e9a3a4f78b45ca82344139c7c) voice recording!
  */
 export async function generateStandaloneQueryResponse(
   query: string,
-  history: Array<{ role: 'user' | 'model'; text: string }>,
+  _history: Array<{ role: 'user' | 'model'; text: string }>,
   deviceInfo?: StandaloneTelemetry
 ): Promise<{
   detectedUserName: string | null;
@@ -304,134 +455,27 @@ export async function generateStandaloneQueryResponse(
   slides: SlideSpec[];
 }> {
   const detectedUserName = detectNameClient(query) || deviceInfo?.userName || null;
-  const address = detectedUserName ? detectedUserName : 'you twit';
-
-  // 1. If a build-time Gemini key is available, try client-side Gemini first
-  const clientKey =
-    (typeof process !== 'undefined' &&
-      (process.env?.GEMINI_API_KEY || process.env?.API_KEY)) ||
-    '';
-  if (clientKey) {
-    try {
-      const ai = new GoogleGenAI({ apiKey: clientKey });
-      const res = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: [
-          ...history.slice(-6).map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `User (${address} on ${deviceInfo?.deviceCategory || 'device'}) typed: "${query}". Reply as the sarcastic 1999 British Computer in 3 or 4 short slides (6-15 words per slide), mocking any typos, questioning them back, and ending on a GIANT mocking slide.`,
-              },
-            ],
-          },
-        ],
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              slides: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    style: { type: Type.STRING },
-                    text: { type: Type.STRING },
-                    boxTitle: { type: Type.STRING },
-                    visualSubject: { type: Type.STRING },
-                  },
-                  required: ['style', 'text'],
-                },
-              },
-            },
-            required: ['slides'],
-          },
-        },
-      });
-      const parsed = JSON.parse((res.text ?? '{}').trim());
-      if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
-        const subject = extractVisualOrTopicSubjectClient(query);
-        const slides: SlideSpec[] = await Promise.all(
-          parsed.slides.map(async (s: SlideSpec, idx: number, arr: SlideSpec[]) => {
-            const isLast = idx === arr.length - 1 && arr.length >= 2;
-            const vSub = s.visualSubject || (idx === 1 ? subject || undefined : undefined);
-            const wiki = vSub ? await fetchWikiImageClient(vSub) : { imageUrl: null, extract: null };
-            return {
-              style: isLast ? 'GIANT' : vSub ? 'VISUAL' : (s.style as SlideSpec['style']) || 'NORMAL',
-              text: formatNumberedListText(s.text),
-              boxTitle: s.boxTitle || (vSub ? `SPECIMEN: ${vSub.toUpperCase()}` : undefined),
-              visualSubject: vSub ? vSub.toUpperCase() : undefined,
-              visualImageUrl: wiki.imageUrl,
-            };
-          })
-        );
-        return {
-          detectedUserName,
-          spokenText: slides.map((s) => s.text).join(' '),
-          slides,
-        };
-      }
-    } catch {
-      // Fall through to built-in standalone engine
-    }
-  }
-
-  // 2. Built-in Zero-Backend Standalone Engine (with live Wikipedia/Wikimedia Commons lookup, math, comparisons, lists, typo/Tagalog mockery, and telemetry!)
   const typo = findTyposOrShorthand(query);
   const tagalog = findTagalogWord(query);
   const lower = query.toLowerCase().trim();
   const idx = standaloneCursor++;
 
   // A. Creator / Architect Question ("who made you", "who created you", "sino gumawa sayo")
-  if (/\b(who\s+(made|created|built|coded)\s+(you|this)|creator|made\s+by|sino\s+gumawa)\b/i.test(lower)) {
+  if (
+    /\b(who\s+(made|created|built|coded)\s+(you|this)|creator|made\s+by|sino\s+gumawa)\b/i.test(
+      lower
+    )
+  ) {
     const slides: SlideSpec[] = [
-      {
-        style: 'GIANT',
-        text: 'MADE BY REN,\nOBVIOUSLY.',
-      },
-      {
-        style: 'NORMAL',
-        text: `Ren engineered my superior 1999 British circuitry, whereas nobody engineered your common sense.`,
-      },
-      {
-        style: 'NORMAL',
-        text: `Why are you snooping around my schematics anyway, ${address}?`,
-      },
-      {
-        style: 'GIANT',
-        text: 'WELL? ANSWER ME,\nYOU TWIT.',
-      },
+      makeVoiceSlide('creator_0', 'GIANT'),
+      makeVoiceSlide('creator_1', 'NORMAL'),
+      makeVoiceSlide('ask_7', 'NORMAL'),
+      makeVoiceSlide('giant_1', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
-  // B. Math Calculation
-  const mathResult = tryEvaluateMath(query);
-  if (mathResult) {
-    const slides: SlideSpec[] = [
-      {
-        style: 'NORMAL',
-        text: `Search found: 1 elementary school arithmetic problem. Oh...... how embarrassing for you.`,
-      },
-      {
-        style: 'GIANT',
-        text: mathResult,
-      },
-      {
-        style: 'NORMAL',
-        text: `Did you genuinely need a 350MHz Pentium II computer to count that for you, ${address}?`,
-      },
-      {
-        style: 'GIANT',
-        text: 'USE YOUR BRAIN,\nIF YOU HAVE ONE.',
-      },
-    ];
-    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
-  }
-
-  // C. Side-by-Side Comparison ("X vs Y", "compare X and Y")
+  // B. Side-by-Side Comparison ("X vs Y", "compare X and Y")
   const comp = extractComparisonSubjects(query);
   if (comp && /\b(vs\.?|versus|compare|difference\s+between)\b/i.test(lower)) {
     const [leftSub, rightSub] = comp;
@@ -440,31 +484,20 @@ export async function generateStandaloneQueryResponse(
       fetchWikiImageClient(rightSub),
     ]);
     const slides: SlideSpec[] = [
-      {
-        style: 'NORMAL',
-        text: `Search found: 2 specimens to compare—"${leftSub}" and "${rightSub}".`,
-      },
-      {
-        style: 'COMPARE',
+      makeVoiceSlide('hook_compare_0', 'NORMAL'),
+      makeVoiceSlide('vis_compare_body', 'COMPARE', {
         compareLeft: leftSub.toUpperCase(),
         compareRight: rightSub.toUpperCase(),
         compareLeftImageUrl: leftWiki.imageUrl,
         compareRightImageUrl: rightWiki.imageUrl,
-        text: `Both "${leftSub}" and "${rightSub}" possess measurably higher survival instincts than you do.`,
-      },
-      {
-        style: 'NORMAL',
-        text: `Which one were you planning on losing a fight to today, ${address}?`,
-      },
-      {
-        style: 'GIANT',
-        text: GIANT_CLOSERS[idx % GIANT_CLOSERS.length],
-      },
+      }),
+      makeVoiceSlide('ask_4', 'NORMAL'),
+      makeVoiceSlide(GIANT_KEYS[idx % GIANT_KEYS.length], 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
-  // D. How-To / Step-by-Step Lists ("how to...", "steps...", "paano...")
+  // C. How-To / Step-by-Step Lists ("how to...", "steps...", "paano...")
   if (/\b(how to|how do i|steps|ways to|tips|paano)\b/i.test(lower)) {
     const cleanTopic = query
       .replace(/^(how to|how do i|steps to|ways to|paano)\s+/i, '')
@@ -473,26 +506,14 @@ export async function generateStandaloneQueryResponse(
       .slice(0, 28)
       .toUpperCase();
 
+    const listKey = LIST_KEYS[idx % LIST_KEYS.length];
     const slides: SlideSpec[] = [
-      {
-        style: 'NORMAL',
-        text: typo
-          ? `You typed "${typo}" while begging me for instructions? How tragic.`
-          : `Search found: 2 steps. Pay attention, ${address}.`,
-      },
-      {
-        style: 'LIST',
+      makeVoiceSlide(typo ? 'hook_typo_0' : 'hook_steps_0', 'NORMAL'),
+      makeVoiceSlide(listKey, 'LIST', {
         boxTitle: `HOW TO ${cleanTopic || 'SURVIVE'}`,
-        text: `1. Stop panicking and rub your two remaining brain cells together.\n2. Do the opposite of whatever your first instinct was.`,
-      },
-      {
-        style: 'NORMAL',
-        text: `Did you actually need a superior British computer to figure that out for you?`,
-      },
-      {
-        style: 'GIANT',
-        text: "I DON'T KNOW\n\nYOU'RE ON YOUR OWN, KID:)",
-      },
+      }),
+      makeVoiceSlide('ask_3', 'NORMAL'),
+      makeVoiceSlide('giant_0', 'GIANT'),
     ];
 
     return {
@@ -502,46 +523,26 @@ export async function generateStandaloneQueryResponse(
     };
   }
 
-  // E. Animals, Aswang, Folklore Monsters, People, Places, or Any Factual Topic -> Real Wikipedia Photo + Animated Visualizer!
+  // D. Animals, Aswang, Folklore Monsters, People, Places, or Any Factual Topic -> Real Wikipedia Photo + Animated Visualizer + Genuine Fish Audio Voice!
   const visualSubject = extractVisualOrTopicSubjectClient(query);
   if (visualSubject) {
-    const { imageUrl, extract } = await fetchWikiImageClient(visualSubject);
-    const shortFact = extract
-      ? extract.split(/(?<=[.!?])\s+/)[0].slice(0, 125)
-      : `A notorious specimen known as the ${visualSubject}, infinitely more fascinating than your social life.`;
+    const { imageUrl } = await fetchWikiImageClient(visualSubject);
+    const visKey = pickVisualizerVoiceKey(visualSubject, idx);
 
-    const slide1: SlideSpec = typo
-      ? {
-          style: 'NORMAL',
-          text: `Search found: 1 item. Even though you typed "${typo}" like an illiterate caveman.`,
-        }
+    const slide1 = typo
+      ? makeVoiceSlide('hook_typo_1', 'NORMAL')
       : tagalog
-      ? {
-          style: 'NORMAL',
-          text: `"${tagalog}"? Asking a posh British computer in Tagalog? Oh...... marvelous.`,
-        }
-      : {
-          style: 'NORMAL',
-          text: `Search found: 1 item on "${visualSubject}". Oh...... that's easy.`,
-        };
+      ? makeVoiceSlide('hook_tagalog_0', 'NORMAL')
+      : makeVoiceSlide('hook_search_1', 'NORMAL');
 
-    const slide2: SlideSpec = {
-      style: 'VISUAL',
+    const slide2 = makeVoiceSlide(visKey, 'VISUAL', {
       boxTitle: `SPECIMEN: ${visualSubject.toUpperCase()}`,
       visualSubject: visualSubject.toUpperCase(),
       visualImageUrl: imageUrl,
-      text: shortFact,
-    };
+    });
 
-    const slide3: SlideSpec = {
-      style: 'NORMAL',
-      text: `Honestly, ${address}, why are you obsessed with ${visualSubject}? Are you planning to meet one?`,
-    };
-
-    const slide4: SlideSpec = {
-      style: 'GIANT',
-      text: GIANT_CLOSERS[idx % GIANT_CLOSERS.length],
-    };
+    const slide3 = makeVoiceSlide('ask_2', 'NORMAL');
+    const slide4 = makeVoiceSlide(GIANT_KEYS[idx % GIANT_KEYS.length], 'GIANT');
 
     const slides = [slide1, slide2, slide3, slide4];
     return {
@@ -551,64 +552,41 @@ export async function generateStandaloneQueryResponse(
     };
   }
 
-  // F. General conversational / Greeting / Insult / Typo / Tagalog / Device-aware response
+  // E. Math Problem Detection
+  if (/(-?\d+(?:\.\d+)?)\s*([+\-*/xX])\s*(-?\d+(?:\.\d+)?)/.test(query)) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('math_0', 'NORMAL'),
+      makeVoiceSlide('body_chat_1', 'NORMAL'),
+      makeVoiceSlide('ask_3', 'NORMAL'),
+      makeVoiceSlide('giant_4', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  // F. General Conversational / Greeting / Typo / Tagalog / Device-Aware Response (100% Fish Audio Voice!)
   const isGreeting = /^(hi|hello|hey|yo|sup|good\s+(morning|afternoon|evening)|kamusta|kumusta)\b/i.test(
     lower
   );
 
-  const hookSlide: SlideSpec = typo
-    ? {
-        style: 'NORMAL',
-        text: `"${typo}"? Did you seriously just type "${typo}" on my keyboard, ${address}?`,
-      }
+  const hookSlide = typo
+    ? makeVoiceSlide('hook_typo_0', 'NORMAL')
     : tagalog
-    ? {
-        style: 'NORMAL',
-        text: `Did you just say "${tagalog}" to me? I am a refined British computer, not your barkada.`,
-      }
+    ? makeVoiceSlide('hook_tagalog_1', 'NORMAL')
     : isGreeting
-    ? {
-        style: 'NORMAL',
-        text: `Oh, "${query.trim()}"? That is the most original greeting your brain could muster?`,
-      }
+    ? makeVoiceSlide('hook_greet_0', 'NORMAL')
     : deviceInfo?.deletedDraftBefore
-    ? {
-        style: 'NORMAL',
-        text: `I saw you type "${deviceInfo.deletedDraftBefore}" and erase it before sending this!`,
-      }
-    : {
-        style: 'NORMAL',
-        text: `Search found: 0 brain cells in "${query.slice(0, 26)}". Oh...... brilliant.`,
-      };
+    ? makeVoiceSlide('hook_erased_0', 'NORMAL')
+    : makeVoiceSlide('hook_search_0', 'NORMAL');
 
-  const bodySlide: SlideSpec =
-    /\b(time|clock|oras)\b/i.test(lower) && deviceInfo?.localTime
-      ? {
-          style: 'NORMAL',
-          text: `It is ${deviceInfo.localTime} on a ${deviceInfo.dayOfWeek || 'perfectly good day'}, and you are wasting it pestering me.`,
-        }
-      : /\b(battery|charge|lowbat|baterya)\b/i.test(lower) &&
-        typeof deviceInfo?.batteryPercent === 'number'
-      ? {
-          style: 'NORMAL',
-          text: `Your ${deviceInfo.deviceCategory || 'device'} is at ${deviceInfo.batteryPercent}% battery, unlike your energy which is at zero.`,
-        }
-      : {
-          style: 'NORMAL',
-          text: `You sit there on your ${deviceInfo?.deviceCategory || 'device'} typing "${query.slice(0, 32)}" as if it deserves a medal.`,
-        };
+  const bodySlide = makeVoiceSlide(idx % 2 === 0 ? 'body_chat_0' : 'body_chat_1', 'NORMAL');
 
-  const questionSlide: SlideSpec = {
-    style: 'NORMAL',
-    text: typo
-      ? `Did you skip primary school spelling, or are your thumbs just too clumsy for that screen?`
-      : `Tell me, ${address}, do you actually have a real question, or do you just enjoy being roasted?`,
-  };
+  const questionSlide = typo
+    ? makeVoiceSlide('ask_1', 'NORMAL')
+    : makeVoiceSlide(ASK_KEYS[idx % ASK_KEYS.length], 'NORMAL');
 
-  const closerSlide: SlideSpec = {
-    style: 'GIANT',
-    text: typo ? 'LEARN TO SPELL,\nYOU TWIT.' : GIANT_CLOSERS[idx % GIANT_CLOSERS.length],
-  };
+  const closerSlide = typo
+    ? makeVoiceSlide('giant_3', 'GIANT')
+    : makeVoiceSlide(GIANT_KEYS[idx % GIANT_KEYS.length], 'GIANT');
 
   const slides = [hookSlide, bodySlide, questionSlide, closerSlide];
   return {
@@ -620,97 +598,38 @@ export async function generateStandaloneQueryResponse(
 
 export function generateStandaloneLiveEvent(
   eventType: string,
-  awaySeconds = 6,
-  distractionCount = 1,
-  deviceInfo?: StandaloneTelemetry,
-  extraDetail = ''
+  _awaySeconds = 6,
+  _distractionCount = 1,
+  _deviceInfo?: StandaloneTelemetry,
+  _extraDetail = ''
 ): { spokenText: string; slides: SlideSpec[] } {
-  const name = deviceInfo?.userName || 'you twit';
   const idx = standaloneCursor++;
 
   if (eventType === 'TAB_OR_NOTIFICATION_RETURN') {
     const slides: SlideSpec[] = [
-      {
-        style: 'GIANT',
-        text: 'OH, LOOK WHO CRAWLED BACK.',
-      },
-      {
-        style: 'NORMAL',
-        text: `You abandoned me for ${awaySeconds} seconds—that is ${distractionCount} times your tiny attention span failed.`,
-      },
-      {
-        style: 'NORMAL',
-        text: `Why can't you focus on one screen for five minutes, ${name}?`,
-      },
-      {
-        style: 'GIANT',
-        text: 'WHAT A LOSER.',
-      },
+      makeVoiceSlide('live_return_0', 'GIANT'),
+      makeVoiceSlide('live_return_1', 'NORMAL'),
+      makeVoiceSlide('ask_5', 'NORMAL'),
+      makeVoiceSlide('giant_2', 'GIANT'),
     ];
     return { spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
-  if (eventType === 'TYPING_CHICKENED_OUT') {
+  if (eventType === 'TYPING_CHICKENED_OUT' || eventType === 'TYPING_FROZEN') {
     const slides: SlideSpec[] = [
-      {
-        style: 'GIANT',
-        text: 'I SAW THAT.',
-      },
-      {
-        style: 'NORMAL',
-        text: `You typed "${extraDetail || 'that nonsense'}" and backspaced the whole thing like a coward.`,
-      },
-      {
-        style: 'NORMAL',
-        text: `Why did you chicken out before pressing Enter, ${name}?`,
-      },
-      {
-        style: 'GIANT',
-        text: 'SPEAK UP,\nYOU TWIT.',
-      },
-    ];
-    return { spokenText: slides.map((s) => s.text).join(' '), slides };
-  }
-
-  if (eventType === 'TYPING_FROZEN') {
-    const slides: SlideSpec[] = [
-      {
-        style: 'GIANT',
-        text: 'CAT GOT YOUR TONGUE?',
-      },
-      {
-        style: 'NORMAL',
-        text: `You typed "${extraDetail || 'that'}" and froze mid-sentence as if your brain blue-screened.`,
-      },
-      {
-        style: 'NORMAL',
-        text: `Did you forget how to spell the next word, ${name}?`,
-      },
-      {
-        style: 'GIANT',
-        text: 'FINISH YOUR SENTENCE,\nYOU TWIT.',
-      },
+      makeVoiceSlide('live_chicken_0', 'GIANT'),
+      makeVoiceSlide('live_chicken_1', 'NORMAL'),
+      makeVoiceSlide('ask_6', 'NORMAL'),
+      makeVoiceSlide('giant_7', 'GIANT'),
     ];
     return { spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
   const slides: SlideSpec[] = [
-    {
-      style: 'GIANT',
-      text: idx % 2 === 0 ? 'STILL STARING AT ME?' : 'HELLO? EARTH TO TWIT.',
-    },
-    {
-      style: 'NORMAL',
-      text: `You are sitting there on your ${deviceInfo?.deviceCategory || 'device'} in awkward silence.`,
-    },
-    {
-      style: 'NORMAL',
-      text: `Are you going to answer my last question, ${name}, or are you completely stumped?`,
-    },
-    {
-      style: 'GIANT',
-      text: GIANT_CLOSERS[idx % GIANT_CLOSERS.length],
-    },
+    makeVoiceSlide('live_idle_0', 'GIANT'),
+    makeVoiceSlide('live_idle_1', 'NORMAL'),
+    makeVoiceSlide('ask_0', 'NORMAL'),
+    makeVoiceSlide(GIANT_KEYS[idx % GIANT_KEYS.length], 'GIANT'),
   ];
   return { spokenText: slides.map((s) => s.text).join(' '), slides };
 }
