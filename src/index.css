@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+:root {
+  --crt-teal: #53B89A;
+  --crt-teal-edge: #3F967C;
+  --crt-dark: #0A261E;
+  --crt-cream: #E2F6C2;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--crt-teal);
+  color: var(--crt-cream);
+  font-family: 'Michroma', 'Bank Gothic', 'Eurostile', sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Exact 1999 Courage Computer Screen Font: Thin, wide, squared-off geometric sans */
+.font-courage {
+  font-family: 'Michroma', 'Bank Gothic', 'Eurostile', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.055em;
+  word-spacing: 0.12em;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Classic 90s CMD Font */
+.font-cmd {
+  font-family: 'VT323', 'IBM Plex Mono', monospace;
+  letter-spacing: 0.06em;
+}
+
+.font-cli {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Soft pale-greenish-yellow phosphor bloom on teal with subtle CRT chromatic edge */
+.phosphor-text {
+  color: #E2F6C2;
+  text-shadow:
+    0 0 3px rgba(226, 246, 194, 0.82),
+    0 0 10px rgba(212, 245, 176, 0.42),
+    1.5px 0 1px rgba(255, 255, 210, 0.22),
+    -1.5px 0 1px rgba(180, 240, 200, 0.22);
+}
+
+/* Subtle CRT tube gradient and scanlines matching the cartoon monitor surface */
+.crt-surface {
+  background: radial-gradient(
+    ellipse at center,
+    #58BF9F 0%,
+    #52B698 62%,
+    #45A185 90%,
+    #388970 100%
+  );
+}
+
+.crt-scanlines {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0) 50%,
+    rgba(16, 56, 44, 0.11) 50%,
+    rgba(16, 56, 44, 0.11)
+  );
+  background-size: 100% 4px;
+}
+
+/* Subtle CRT Glitch / Phosphor Jitter effect */
+@keyframes crt-glitch-jitter {
+  0%, 93%, 100% {
+    transform: translate(0, 0) skewX(0deg);
+    opacity: 1;
+  }
+  94% {
+    transform: translate(-2px, 0.5px) skewX(-0.8deg);
+    opacity: 0.94;
+  }
+  96% {
+    transform: translate(2px, -0.5px) skewX(0.8deg);
+    opacity: 0.98;
+  }
+  98% {
+    transform: translate(-1px, 0) skewX(0deg);
+    opacity: 0.95;
+  }
+}
+
+.crt-glitch {
+  animation: crt-glitch-jitter 4.5s infinite;
+}
+
+/* Authentic 1990s CRT Monitor Tube Power-On Animation */
+@keyframes crt-power-on {
+  0% {
+    transform: scale(0.01, 0.005);
+    filter: brightness(6) contrast(2.5);
+  }
+  40% {
+    transform: scale(1, 0.006);
+    filter: brightness(4) contrast(2);
+  }
+  80% {
+    transform: scale(1, 1.02);
+    filter: brightness(1.4) contrast(1.15);
+  }
+  100% {
+    transform: scale(1, 1);
+    filter: brightness(1) contrast(1);
+  }
+}
+
+.animate-crt-open {
+  animation: crt-power-on 0.68s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform-origin: center center;
+}
+
+/* Retro 90s CRT monochrome phosphor tint for fetched specimen photos */
+.crt-photo-filter {
+  filter: grayscale(100%) sepia(70%) hue-rotate(105deg) saturate(160%) contrast(118%) brightness(102%);
+  mix-blend-mode: normal;
+}
+
+@keyframes cursor-blink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+
+.cursor-block {
+  animation: cursor-blink 0.8s steps(1, end) infinite;
+}
+
+/* Vigorous Cartoon Bell Clanging Animation matching the Courage Computer Bell screenshot */
+@keyframes cartoon-bell-clang {
+  0% {
+    transform: rotate(-28deg) scale(1.04) translate(-4px, -2px);
+  }
+  15% {
+    transform: rotate(24deg) scale(1.08) translate(5px, 2px);
+  }
+  30% {
+    transform: rotate(-26deg) scale(1.05) translate(-5px, 1px);
+  }
+  45% {
+    transform: rotate(22deg) scale(1.07) translate(4px, -2px);
+  }
+  60% {
+    transform: rotate(-24deg) scale(1.04) translate(-3px, 2px);
+  }
+  75% {
+    transform: rotate(20deg) scale(1.06) translate(3px, -1px);
+  }
+  90% {
+    transform: rotate(-16deg) scale(1.02) translate(-2px, 0px);
+  }
+  100% {
+    transform: rotate(-28deg) scale(1.04) translate(-4px, -2px);
+  }
+}
+
+.animate-bell-clang {
+  animation: cartoon-bell-clang 0.28s ease-in-out infinite;
+  transform-origin: 65% 28%;
+}

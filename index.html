@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      (function () {
+        var NativeWS = window.WebSocket;
+        if (!NativeWS) return;
+        function FakeViteWS(url, protocols) {
+          this.url = String(url || '');
+          this.protocol = Array.isArray(protocols) ? protocols[0] || '' : String(protocols || '');
+          this.readyState = 1;
+          this.bufferedAmount = 0;
+          this.extensions = '';
+          this.binaryType = 'blob';
+          this.onopen = null;
+          this.onerror = null;
+          this.onclose = null;
+          this.onmessage = null;
+          var self = this;
+          this._listeners = {};
+          setTimeout(function () {
+            var evt = new Event('open');
+            if (typeof self.onopen === 'function') self.onopen(evt);
+            var list = self._listeners['open'] || [];
+            for (var i = 0; i < list.length; i++) list[i].call(self, evt);
+          }, 0);
+        }
+        FakeViteWS.prototype.addEventListener = function (type, cb) {
+          if (!this._listeners[type]) this._listeners[type] = [];
+          this._listeners[type].push(cb);
+        };
+        FakeViteWS.prototype.removeEventListener = function (type, cb) {
+          if (!this._listeners[type]) return;
+          this._listeners[type] = this._listeners[type].filter(function (fn) {
+            return fn !== cb;
+          });
+        };
+        FakeViteWS.prototype.send = function () {};
+        FakeViteWS.prototype.close = function () {
+          this.readyState = 3;
+        };
+        function PatchedWebSocket(url, protocols) {
+          var protoStr = Array.isArray(protocols) ? protocols.join(',') : String(protocols || '');
+          if (protoStr.indexOf('vite-') !== -1) {
+            return new FakeViteWS(url, protocols);
+          }
+          return protocols !== undefined ? new NativeWS(url, protocols) : new NativeWS(url);
+        }
+        PatchedWebSocket.prototype = NativeWS.prototype;
+        PatchedWebSocket.CONNECTING = NativeWS.CONNECTING;
+        PatchedWebSocket.OPEN = NativeWS.OPEN;
+        PatchedWebSocket.CLOSING = NativeWS.CLOSING;
+        PatchedWebSocket.CLOSED = NativeWS.CLOSED;
+        window.WebSocket = PatchedWebSocket;
+        window.addEventListener('unhandledrejection', function (e) {
+          if (e && e.reason && String(e.reason.message || e.reason).indexOf('WebSocket closed without opened') !== -1) {
+            e.preventDefault();
+          }
+        });
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Nowhere Terminal — Courage's Computer</title>
+    <meta name="description" content="A downloadable 90s monochrome teal voice and command-line PWA emulating the cynical, sarcastic Computer from Courage the Cowardly Dog." />
+    <meta property="og:title" content="Nowhere Terminal — Courage's Computer" />
+    <meta property="og:description" content="A downloadable 90s monochrome teal voice and command-line PWA emulating the cynical, sarcastic Computer from Courage the Cowardly Dog." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#53B89A" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="1999 AI" />
+    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Michroma&family=VT323&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "Nowhere Terminal — Courage's Computer",
+  "description": "A downloadable 90s monochrome teal voice and command-line PWA emulating the cynical, sarcastic Computer from Courage the Cowardly Dog.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
