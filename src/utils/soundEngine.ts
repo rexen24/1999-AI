@@ -1,4 +1,4 @@
-// Authentic 1999 Courage Computer Sound, Mobile Haptics & Per-Slide Locked Voice-Typewriter Engine
+// Authentic 1999 Courage Computer Sound, Mobile Haptics & Acoustic-Waveform-Locked Voice-Typewriter Engine
 
 export type SlideStyle = 'NORMAL' | 'GIANT' | 'LIST' | 'COMPARE' | 'VISUAL';
 
@@ -15,10 +15,19 @@ export interface SlideSpec {
   ttsId?: string;
 }
 
+export interface SpeechEnvelope {
+  trimStartSec: number;
+  speechEndSec: number;
+  effectiveDurationSec: number;
+  cumulativeEnergy: Float32Array;
+  bucketDurationSec: number;
+}
+
 export interface DecodedSlide extends SlideSpec {
   audioBuffer: AudioBuffer | null;
   audioBase64: string | null;
   audioMimeType: string | null;
+  envelope?: SpeechEnvelope | null;
 }
 
 export interface ActiveSlideRender {
@@ -51,15 +60,19 @@ function buildSpeechTimeline(text: string): { weights: number[]; totalWeight: nu
     let w = 1.0;
 
     if (ch === '.' && nextCh === '.') {
-      w = 1.0;
+      w = 1.15;
     } else if (ch === '.' || ch === '!' || ch === '?') {
-      w = 4.5;
-    } else if (ch === ',' || ch === ';' || ch === ':') {
-      w = 2.6;
+      w = 3.2;
+    } else if (ch === ',' || ch === ';' || ch === ':' || ch === '—' || ch === '-') {
+      w = 2.1;
     } else if (ch === '\n') {
-      w = 2.2;
+      w = 1.8;
     } else if (ch === ' ') {
-      w = 0.7;
+      w = 0.55;
+    } else if (/[AEIOUaeiou]/.test(ch)) {
+      w = 1.15;
+    } else {
+      w = 0.85;
     }
 
     weights.push(w);
@@ -86,14 +99,124 @@ function sliceBySpeechProgress(text: string, progress: number): string {
   return text;
 }
 
+/**
+ * Analyzes the actual PCM waveform of the decoded AudioBuffer to find:
+ * 1) Exact voice onset (`trimStartSec`) so leading MP3 silence is skipped immediately
+ * 2) Exact voice finish (`speechEndSec`) so text finishes at the exact end of the final spoken word
+ * 3) Cumulative vocal energy curve (`cumulativeEnergy`) so pauses in the voice ("Oh......") pause the typing,
+ *    and rapid bursts of speech advance the typing in lockstep with the voice!
+ */
+function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
+  const data = buffer.getChannelData(0);
+  const sampleRate = buffer.sampleRate;
+  const totalDuration = buffer.duration;
+  const bucketDurationSec = 0.025; // 25ms high-resolution buckets (40fps envelope)
+  const samplesPerBucket = Math.max(1, Math.floor(sampleRate * bucketDurationSec));
+  const numBuckets = Math.max(1, Math.ceil(data.length / samplesPerBucket));
+  const rmsBuckets = new Float32Array(numBuckets);
+
+  let maxRms = 0;
+  for (let b = 0; b < numBuckets; b++) {
+    const start = b * samplesPerBucket;
+    const end = Math.min(data.length, start + samplesPerBucket);
+    let sumSq = 0;
+    for (let i = start; i < end; i++) {
+      const s = data[i];
+      sumSq += s * s;
+    }
+    const rms = Math.sqrt(sumSq / Math.max(1, end - start));
+    rmsBuckets[b] = rms;
+    if (rms > maxRms) maxRms = rms;
+  }
+
+  const silenceThreshold = Math.max(0.006, maxRms * 0.065);
+  let firstActiveBucket = 0;
+  let lastActiveBucket = numBuckets - 1;
+
+  for (let b = 0; b < numBuckets; b++) {
+    if (rmsBuckets[b] >= silenceThreshold) {
+      firstActiveBucket = b;
+      break;
+    }
+  }
+
+  for (let b = numBuckets - 1; b >= firstActiveBucket; b--) {
+    if (rmsBuckets[b] >= silenceThreshold) {
+      lastActiveBucket = b;
+      break;
+    }
+  }
+
+  const trimStartSec = Math.max(0, firstActiveBucket * bucketDurationSec - 0.015);
+  const speechEndSec = Math.min(
+    totalDuration,
+    (lastActiveBucket + 1) * bucketDurationSec + 0.02
+  );
+  const effectiveDurationSec = Math.max(0.22, speechEndSec - trimStartSec);
+
+  // Build cumulative vocal energy curve across the active speech window [firstActiveBucket..lastActiveBucket]
+  const activeCount = Math.max(1, lastActiveBucket - firstActiveBucket + 1);
+  const cumulativeEnergy = new Float32Array(activeCount);
+  let runningEnergy = 0;
+
+  for (let i = 0; i < activeCount; i++) {
+    const rms = rmsBuckets[firstActiveBucket + i];
+    // Blend 65% real vocal energy (compressed with sqrt so soft consonants still advance smoothly) + 35% baseline clock
+    const weight = rms >= silenceThreshold * 0.65 ? Math.pow(rms / Math.max(0.001, maxRms), 0.55) + 0.28 : 0.06;
+    runningEnergy += weight;
+    cumulativeEnergy[i] = runningEnergy;
+  }
+
+  if (runningEnergy > 0) {
+    for (let i = 0; i < activeCount; i++) {
+      cumulativeEnergy[i] = cumulativeEnergy[i] / runningEnergy;
+    }
+  } else {
+    for (let i = 0; i < activeCount; i++) {
+      cumulativeEnergy[i] = (i + 1) / activeCount;
+    }
+  }
+
+  return {
+    trimStartSec,
+    speechEndSec,
+    effectiveDurationSec,
+    cumulativeEnergy,
+    bucketDurationSec,
+  };
+}
+
+function getEnvelopeSpeechProgress(envelope: SpeechEnvelope, elapsedSinceTrimSec: number): number {
+  // Add a 52ms perceptual syllable-onset lead so letters hit the screen at the exact start of each spoken syllable!
+  const leadElapsed = elapsedSinceTrimSec + 0.052;
+  if (leadElapsed <= 0) return 0.02;
+  if (leadElapsed >= envelope.effectiveDurationSec) return 1;
+
+  const exactBucket = leadElapsed / envelope.bucketDurationSec;
+  const idx = Math.floor(exactBucket);
+  const frac = exactBucket - idx;
+  const arr = envelope.cumulativeEnergy;
+
+  if (idx >= arr.length - 1) return 1;
+  const prev = idx <= 0 ? 0 : arr[idx - 1];
+  const curr = arr[Math.max(0, idx)];
+  const energyProgress = prev + (curr - prev) * frac;
+
+  const linearProgress = Math.min(1, leadElapsed / envelope.effectiveDurationSec);
+  // 72% real acoustic waveform energy envelope + 28% linear time anchor for rock-solid syllable locking
+  return Math.min(1, Math.max(0.02, energyProgress * 0.72 + linearProgress * 0.28));
+}
+
 class RetroSoundEngine {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
   private activeVoiceSource: AudioBufferSourceNode | null = null;
+  private activeHtmlAudio: HTMLAudioElement | null = null;
   private activeWaitingLoopStop: (() => void) | null = null;
   private rafId: number | null = null;
   private typewriterTimer: ReturnType<typeof setInterval> | null = null;
   private playbackCancelled: boolean = false;
+  private decodedCache = new Map<string, { buffer: AudioBuffer; envelope: SpeechEnvelope }>();
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -429,6 +552,15 @@ class RetroSoundEngine {
       }
       this.activeVoiceSource = null;
     }
+    if (this.activeHtmlAudio) {
+      try {
+        this.activeHtmlAudio.pause();
+        this.activeHtmlAudio.src = '';
+      } catch {
+        // Ignore
+      }
+      this.activeHtmlAudio = null;
+    }
     try {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -503,8 +635,15 @@ class RetroSoundEngine {
     }, stepMs);
   }
 
-  public async decodeAudioBase64(audioBase64: string | null): Promise<AudioBuffer | null> {
-    if (!audioBase64) return null;
+  public async decodeAudioWithEnvelope(
+    audioBase64: string | null,
+    cacheKey?: string
+  ): Promise<{ buffer: AudioBuffer | null; envelope: SpeechEnvelope | null }> {
+    if (!audioBase64) return { buffer: null, envelope: null };
+    if (cacheKey && this.decodedCache.has(cacheKey)) {
+      const hit = this.decodedCache.get(cacheKey)!;
+      return { buffer: hit.buffer, envelope: hit.envelope };
+    }
     try {
       const ctx = this.getContext();
       const binaryString = window.atob(audioBase64);
@@ -513,10 +652,20 @@ class RetroSoundEngine {
       for (let i = 0; i < len; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      return await ctx.decodeAudioData(bytes.buffer.slice(0));
+      const buffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
+      const envelope = analyzeAudioBufferEnvelope(buffer);
+      if (cacheKey) {
+        this.decodedCache.set(cacheKey, { buffer, envelope });
+      }
+      return { buffer, envelope };
     } catch {
-      return null;
+      return { buffer: null, envelope: null };
     }
+  }
+
+  public async decodeAudioBase64(audioBase64: string | null): Promise<AudioBuffer | null> {
+    const { buffer } = await this.decodeAudioWithEnvelope(audioBase64);
+    return buffer;
   }
 
   private playSingleDecodedSlide(
@@ -553,21 +702,27 @@ class RetroSoundEngine {
       };
 
       const ctx = this.getContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
 
-      // Only bind to AudioBufferSourceNode clock if AudioContext is actively running!
-      // On mobile Android before first touch, ctx.state may be 'suspended', so falling through
-      // to the wall-clock timer prevents the slide from hanging while still starting audio if unlocked!
-      if (slide.audioBuffer && !this.isMuted && ctx.state === 'running') {
+      const envelope =
+        slide.envelope ||
+        (slide.audioBuffer ? analyzeAudioBufferEnvelope(slide.audioBuffer) : null);
+
+      // 1. Primary Path: Web Audio API with Acoustic Waveform Envelope Sync & Leading Silence Trim
+      if (slide.audioBuffer && envelope && !this.isMuted && ctx.state === 'running') {
         try {
           const source = ctx.createBufferSource();
           source.buffer = slide.audioBuffer;
           this.activeVoiceSource = source;
           source.connect(ctx.destination);
 
-          const duration = Math.max(0.25, slide.audioBuffer.duration);
+          const trimStart = envelope.trimStartSec;
+          const totalRemaining = Math.max(0.25, slide.audioBuffer.duration - trimStart);
           const startTime = ctx.currentTime;
 
-          emitAtProgress(0.02);
+          emitAtProgress(0.03);
 
           const tick = () => {
             if (this.playbackCancelled) {
@@ -575,10 +730,10 @@ class RetroSoundEngine {
               return;
             }
             const elapsed = ctx.currentTime - startTime;
-            const progress = Math.min(1, Math.max(0, elapsed / (duration * 0.93)));
+            const progress = getEnvelopeSpeechProgress(envelope, elapsed);
             emitAtProgress(progress);
 
-            if (elapsed < duration) {
+            if (elapsed < totalRemaining) {
               this.rafId = requestAnimationFrame(tick);
             }
           };
@@ -589,28 +744,34 @@ class RetroSoundEngine {
               this.rafId = null;
             }
             emitAtProgress(1);
-            setTimeout(resolve, 180);
+            setTimeout(resolve, 110);
           };
 
-          source.start(0);
+          // Start immediately at the voice onset (skipping any dead MP3 leading silence!)
+          source.start(0, trimStart);
           this.rafId = requestAnimationFrame(tick);
           return;
         } catch {
-          // Fall through to timer fallback
+          // Fall through to fallback
         }
       }
 
-      // If running on static GitHub Pages without server audioBuffer, speak with British Web Speech API!
-      if (!slide.audioBuffer && !this.isMuted) {
+      // 2. If running without a decoded buffer, use British speech fallback
+      if (!slide.audioBuffer && !slide.audioBase64 && !this.isMuted) {
         this.speakBritishBrowserFallback(normalizedText);
       }
 
-      // Wall-clock fallback (also kicks in voice audio mid-slide if user touches the screen on mobile!)
+      // 3. Wall-clock + Mid-Slide Audio Unlock Path (for mobile boot before first screen touch)
       let audioStartedMidSlide = false;
-      const durationMs = slide.audioBuffer
-        ? Math.max(1200, slide.audioBuffer.duration * 1000)
-        : Math.max(1750, fullUpperText.length * 56);
+      const trimStart = envelope ? envelope.trimStartSec : 0;
+      const durationMs = envelope
+        ? Math.max(950, envelope.effectiveDurationSec * 1000)
+        : slide.audioBuffer
+        ? Math.max(1100, slide.audioBuffer.duration * 1000)
+        : Math.max(1500, fullUpperText.length * 46);
       const started = performance.now();
+
+      emitAtProgress(0.03);
 
       const interval = setInterval(() => {
         if (this.playbackCancelled) {
@@ -619,9 +780,10 @@ class RetroSoundEngine {
           return;
         }
 
-        const elapsed = performance.now() - started;
+        const elapsedMs = performance.now() - started;
+        const elapsedSec = elapsedMs / 1000;
 
-        // If the user touches the mobile screen during the boot monologue, unlock and play the audio immediately!
+        // If user taps the screen during boot, immediately unlock and start the Fish Audio voice at the current syllable!
         if (!audioStartedMidSlide && slide.audioBuffer && !this.isMuted && ctx.state === 'running') {
           audioStartedMidSlide = true;
           try {
@@ -631,7 +793,7 @@ class RetroSoundEngine {
             source.connect(ctx.destination);
             const offsetSec = Math.min(
               slide.audioBuffer.duration - 0.05,
-              Math.max(0, elapsed / 1000)
+              Math.max(0, trimStart + elapsedSec)
             );
             source.start(0, offsetSec);
           } catch {
@@ -639,14 +801,17 @@ class RetroSoundEngine {
           }
         }
 
-        const progress = Math.min(1, elapsed / (durationMs * 0.93));
+        const progress = envelope
+          ? getEnvelopeSpeechProgress(envelope, elapsedSec)
+          : Math.min(1, (elapsedMs + 45) / durationMs);
+
         emitAtProgress(progress);
-        if (elapsed >= durationMs) {
+        if (elapsedMs >= durationMs) {
           clearInterval(interval);
           emitAtProgress(1);
-          setTimeout(resolve, 220);
+          setTimeout(resolve, 140);
         }
-      }, 30);
+      }, 20);
     });
   }
 

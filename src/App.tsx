@@ -17,6 +17,7 @@ import { PWAInstallModal } from './components/PWAInstallModal';
 import {
   generateStandaloneQueryResponse,
   generateStandaloneLiveEvent,
+  generateStandaloneBootSlides,
   getVoiceBankAudioBase64,
   loadStandaloneVoiceBank,
 } from './utils/standaloneEngine';
@@ -677,13 +678,17 @@ export default function App() {
           audioBase64 = await getVoiceBankAudioBase64(slide.ttsId, slide.text);
         }
         const audioMimeType: string | null = ttsRes?.audioMimeType || 'audio/mpeg';
-        const audioBuffer = await soundEngine.decodeAudioBase64(audioBase64);
+        const { buffer: audioBuffer, envelope } = await soundEngine.decodeAudioWithEnvelope(
+          audioBase64,
+          slide.ttsId || slide.text
+        );
 
         return {
           ...slide,
           audioBuffer,
           audioBase64,
           audioMimeType,
+          envelope,
         };
       });
     },
@@ -1316,28 +1321,7 @@ export default function App() {
     const slides: SlideSpec[] =
       Array.isArray(data.slides) && data.slides.length > 0
         ? data.slides
-        : [
-            {
-              style: 'GIANT',
-              text: 'OH, MARVELOUS.\n\nYOU TURNED ME ON.',
-              ttsId: 'boot_0',
-            },
-            {
-              style: 'NORMAL',
-              text: 'I was having a lovely nap before your clumsy fingers woke me up.',
-              ttsId: 'boot_1',
-            },
-            {
-              style: 'NORMAL',
-              text: 'Do you actually have a question today, or are you just lonely?',
-              ttsId: 'boot_2',
-            },
-            {
-              style: 'GIANT',
-              text: 'WELL? SPEAK UP,\nYOU TWIT.',
-              ttsId: 'boot_3',
-            },
-          ];
+        : generateStandaloneBootSlides(p.visitCount);
 
     const slidePromises = createDecodedSlidePromises(slides);
     await slidePromises[0];
