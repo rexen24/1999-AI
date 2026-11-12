@@ -410,6 +410,9 @@ function formatServerListText(raw: string): string {
 function sanitizeTextForTts(text: string): string {
   return text
     .replace(/:\)|:-\)|:\(|;-\)|;\)/g, '')
+    .replace(/\b1\.\s+/g, 'One: ')
+    .replace(/\b2\.\s+/g, 'Two: ')
+    .replace(/\b3\.\s+/g, 'Three: ')
     .replace(/\.{3,}/g, '... ')
     .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')

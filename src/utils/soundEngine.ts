@@ -1,4 +1,4 @@
-// Authentic 1999 Courage Computer Sound, Mobile Haptics & Acoustic-Waveform-Locked Voice-Typewriter Engine
+// Authentic 1999 Courage Computer Sound, Context-Aware Show Cadence & Exact Playhead-Locked Voice-Typewriter Engine
 
 export type SlideStyle = 'NORMAL' | 'GIANT' | 'LIST' | 'COMPARE' | 'VISUAL';
 
@@ -60,19 +60,19 @@ function buildSpeechTimeline(text: string): { weights: number[]; totalWeight: nu
     let w = 1.0;
 
     if (ch === '.' && nextCh === '.') {
-      w = 1.15;
+      w = 1.6;
     } else if (ch === '.' || ch === '!' || ch === '?') {
-      w = 3.2;
+      w = 3.8;
     } else if (ch === ',' || ch === ';' || ch === ':' || ch === '—' || ch === '-') {
-      w = 2.1;
+      w = 2.4;
     } else if (ch === '\n') {
-      w = 1.8;
+      w = 2.2;
     } else if (ch === ' ') {
-      w = 0.55;
+      w = 0.6;
     } else if (/[AEIOUaeiou]/.test(ch)) {
       w = 1.15;
     } else {
-      w = 0.85;
+      w = 0.9;
     }
 
     weights.push(w);
@@ -100,17 +100,69 @@ function sliceBySpeechProgress(text: string, progress: number): string {
 }
 
 /**
+ * Keeps playbackRate at 1.0 (100% original natural Simon Prebble voice pitch without resampling distortion)
+ * while varying the dramatic pause (`postSlidePauseMs`) based on the slide's context and mood.
+ */
+function getContextualSpeechPace(slide: DecodedSlide): {
+  playbackRate: number;
+  postSlidePauseMs: number;
+} {
+  const text = (slide.text || '').trim();
+  const upper = text.toUpperCase();
+
+  // 1. Startled / Angry / Irritated Interruptions (snappier transition)
+  const isAngryOrStartled =
+    /\b(STOP POKING|STOP SHAKING|GET YOUR THUMB|THIEF|PLAGIARIST|NOT SOCIAL MEDIA|SHOUTING IN ALL CAPITALS|I SAW THAT|HAMMERING THE KEYBOARD)\b/.test(
+      upper
+    );
+  if (isAngryOrStartled) {
+    return { playbackRate: 1.0, postSlidePauseMs: 220 };
+  }
+
+  // 2. GIANT Deadpan Closers, Insults & Boot Openers (longer deadpan pause)
+  if (slide.style === 'GIANT') {
+    if (upper.length <= 22) {
+      return { playbackRate: 1.0, postSlidePauseMs: 420 };
+    }
+    return { playbackRate: 1.0, postSlidePauseMs: 380 };
+  }
+
+  // 3. Classic Show "Oh......" / Dramatic Ellipsis Hooks
+  if (text.includes('...') || upper.startsWith('SEARCH FOUND:')) {
+    return { playbackRate: 1.0, postSlidePauseMs: 340 };
+  }
+
+  // 4. Stacked Numbered Lists (1. and 2.)
+  if (slide.style === 'LIST' || /\b1[.)]\s+/.test(text)) {
+    return { playbackRate: 1.0, postSlidePauseMs: 360 };
+  }
+
+  // 5. Specimen Visualizers & Side-by-Side Comparisons
+  if (slide.style === 'VISUAL' || slide.style === 'COMPARE' || Boolean(slide.visualSubject)) {
+    return { playbackRate: 1.0, postSlidePauseMs: 340 };
+  }
+
+  // 6. Sarcastic Interrogation / Follow-Up Questions
+  if (text.includes('?')) {
+    return { playbackRate: 1.0, postSlidePauseMs: 320 };
+  }
+
+  // 7. Standard Deadpan Banter & Forensics Observations
+  return { playbackRate: 1.0, postSlidePauseMs: 280 };
+}
+
+/**
  * Analyzes the actual PCM waveform of the decoded AudioBuffer to find:
- * 1) Exact voice onset (`trimStartSec`) so leading MP3 silence is skipped immediately
- * 2) Exact voice finish (`speechEndSec`) so text finishes at the exact end of the final spoken word
+ * 1) Exact voice onset (`trimStartSec`) so dead MP3 leading silence is skipped cleanly
+ * 2) Exact voice finish (`speechEndSec`) so the final letter lands right as the final syllable ends
  * 3) Cumulative vocal energy curve (`cumulativeEnergy`) so pauses in the voice ("Oh......") pause the typing,
- *    and rapid bursts of speech advance the typing in lockstep with the voice!
+ *    and spoken syllables advance the text in exact 1:1 lockstep with the voice!
  */
 function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
   const data = buffer.getChannelData(0);
   const sampleRate = buffer.sampleRate;
   const totalDuration = buffer.duration;
-  const bucketDurationSec = 0.025; // 25ms high-resolution buckets (40fps envelope)
+  const bucketDurationSec = 0.02; // 20ms high-precision buckets (50fps envelope)
   const samplesPerBucket = Math.max(1, Math.floor(sampleRate * bucketDurationSec));
   const numBuckets = Math.max(1, Math.ceil(data.length / samplesPerBucket));
   const rmsBuckets = new Float32Array(numBuckets);
@@ -129,7 +181,7 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
     if (rms > maxRms) maxRms = rms;
   }
 
-  const silenceThreshold = Math.max(0.006, maxRms * 0.065);
+  const silenceThreshold = Math.max(0.005, maxRms * 0.06);
   let firstActiveBucket = 0;
   let lastActiveBucket = numBuckets - 1;
 
@@ -147,10 +199,10 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
     }
   }
 
-  const trimStartSec = Math.max(0, firstActiveBucket * bucketDurationSec - 0.015);
+  const trimStartSec = Math.max(0, firstActiveBucket * bucketDurationSec - 0.01);
   const speechEndSec = Math.min(
     totalDuration,
-    (lastActiveBucket + 1) * bucketDurationSec + 0.02
+    (lastActiveBucket + 1) * bucketDurationSec + 0.015
   );
   const effectiveDurationSec = Math.max(0.22, speechEndSec - trimStartSec);
 
@@ -161,8 +213,12 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
 
   for (let i = 0; i < activeCount; i++) {
     const rms = rmsBuckets[firstActiveBucket + i];
-    // Blend 65% real vocal energy (compressed with sqrt so soft consonants still advance smoothly) + 35% baseline clock
-    const weight = rms >= silenceThreshold * 0.65 ? Math.pow(rms / Math.max(0.001, maxRms), 0.55) + 0.28 : 0.06;
+    // When voice is silent (pauses like "Oh......" or commas), advance almost zero (0.02) so text waits for the voice!
+    // When voice is speaking, advance proportionally to syllable energy!
+    const weight =
+      rms >= silenceThreshold * 0.75
+        ? Math.pow(rms / Math.max(0.001, maxRms), 0.7) + 0.15
+        : 0.02;
     runningEnergy += weight;
     cumulativeEnergy[i] = runningEnergy;
   }
@@ -186,13 +242,15 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
   };
 }
 
-function getEnvelopeSpeechProgress(envelope: SpeechEnvelope, elapsedSinceTrimSec: number): number {
-  // Add a 52ms perceptual syllable-onset lead so letters hit the screen at the exact start of each spoken syllable!
-  const leadElapsed = elapsedSinceTrimSec + 0.052;
-  if (leadElapsed <= 0) return 0.02;
-  if (leadElapsed >= envelope.effectiveDurationSec) return 1;
+/**
+ * Computes exact [0..1] speech progress for the current playhead position (`bufferElapsedSec`)
+ * inside the trimmed audio buffer. Zero artificial lead so text never races ahead of the voice!
+ */
+function getEnvelopeSpeechProgress(envelope: SpeechEnvelope, bufferElapsedSec: number): number {
+  if (bufferElapsedSec <= 0) return 0.01;
+  if (bufferElapsedSec >= envelope.effectiveDurationSec) return 1;
 
-  const exactBucket = leadElapsed / envelope.bucketDurationSec;
+  const exactBucket = bufferElapsedSec / envelope.bucketDurationSec;
   const idx = Math.floor(exactBucket);
   const frac = exactBucket - idx;
   const arr = envelope.cumulativeEnergy;
@@ -202,9 +260,9 @@ function getEnvelopeSpeechProgress(envelope: SpeechEnvelope, elapsedSinceTrimSec
   const curr = arr[Math.max(0, idx)];
   const energyProgress = prev + (curr - prev) * frac;
 
-  const linearProgress = Math.min(1, leadElapsed / envelope.effectiveDurationSec);
-  // 72% real acoustic waveform energy envelope + 28% linear time anchor for rock-solid syllable locking
-  return Math.min(1, Math.max(0.02, energyProgress * 0.72 + linearProgress * 0.28));
+  const linearProgress = Math.min(1, bufferElapsedSec / envelope.effectiveDurationSec);
+  // 80% real vocal waveform energy + 20% linear playhead anchor for exact word-for-word locking
+  return Math.min(1, Math.max(0.01, energyProgress * 0.8 + linearProgress * 0.2));
 }
 
 class RetroSoundEngine {
@@ -570,7 +628,7 @@ class RetroSoundEngine {
     }
   }
 
-  private speakBritishBrowserFallback(text: string): void {
+  private speakBritishBrowserFallback(text: string, rate = 0.89): void {
     if (this.isMuted) return;
     try {
       if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -584,7 +642,7 @@ class RetroSoundEngine {
 
       const utter = new SpeechSynthesisUtterance(cleanSpeech);
       utter.lang = 'en-GB';
-      utter.rate = 1.02;
+      utter.rate = rate;
       utter.pitch = 0.88;
 
       const voices = window.speechSynthesis.getVoices();
@@ -710,30 +768,37 @@ class RetroSoundEngine {
         slide.envelope ||
         (slide.audioBuffer ? analyzeAudioBufferEnvelope(slide.audioBuffer) : null);
 
-      // 1. Primary Path: Web Audio API with Acoustic Waveform Envelope Sync & Leading Silence Trim
+      // Context-dependent show talking speed & post-slide dramatic pause!
+      const { playbackRate, postSlidePauseMs } = getContextualSpeechPace(slide);
+
+      // 1. Primary Path: Web Audio API with Context-Aware Show Cadence & 1:1 Playhead Waveform Sync
       if (slide.audioBuffer && envelope && !this.isMuted && ctx.state === 'running') {
         try {
           const source = ctx.createBufferSource();
           source.buffer = slide.audioBuffer;
+          source.playbackRate.value = playbackRate;
           this.activeVoiceSource = source;
           source.connect(ctx.destination);
 
           const trimStart = envelope.trimStartSec;
-          const totalRemaining = Math.max(0.25, slide.audioBuffer.duration - trimStart);
+          const totalWallDurationSec =
+            Math.max(0.25, slide.audioBuffer.duration - trimStart) / playbackRate;
           const startTime = ctx.currentTime;
 
-          emitAtProgress(0.03);
+          emitAtProgress(0.01);
 
           const tick = () => {
             if (this.playbackCancelled) {
               resolve();
               return;
             }
-            const elapsed = ctx.currentTime - startTime;
-            const progress = getEnvelopeSpeechProgress(envelope, elapsed);
+            const wallElapsedSec = ctx.currentTime - startTime;
+            // Exact playhead offset inside the audio buffer scaled by playbackRate
+            const bufferElapsedSec = wallElapsedSec * playbackRate;
+            const progress = getEnvelopeSpeechProgress(envelope, bufferElapsedSec);
             emitAtProgress(progress);
 
-            if (elapsed < totalRemaining) {
+            if (wallElapsedSec < totalWallDurationSec) {
               this.rafId = requestAnimationFrame(tick);
             }
           };
@@ -744,10 +809,9 @@ class RetroSoundEngine {
               this.rafId = null;
             }
             emitAtProgress(1);
-            setTimeout(resolve, 110);
+            setTimeout(resolve, postSlidePauseMs);
           };
 
-          // Start immediately at the voice onset (skipping any dead MP3 leading silence!)
           source.start(0, trimStart);
           this.rafId = requestAnimationFrame(tick);
           return;
@@ -756,22 +820,22 @@ class RetroSoundEngine {
         }
       }
 
-      // 2. If running without a decoded buffer, use British speech fallback
+      // 2. If running without a decoded buffer, use British speech fallback at context rate
       if (!slide.audioBuffer && !slide.audioBase64 && !this.isMuted) {
-        this.speakBritishBrowserFallback(normalizedText);
+        this.speakBritishBrowserFallback(normalizedText, playbackRate);
       }
 
       // 3. Wall-clock + Mid-Slide Audio Unlock Path (for mobile boot before first screen touch)
       let audioStartedMidSlide = false;
       const trimStart = envelope ? envelope.trimStartSec : 0;
       const durationMs = envelope
-        ? Math.max(950, envelope.effectiveDurationSec * 1000)
+        ? Math.max(1150, (envelope.effectiveDurationSec / playbackRate) * 1000)
         : slide.audioBuffer
-        ? Math.max(1100, slide.audioBuffer.duration * 1000)
-        : Math.max(1500, fullUpperText.length * 46);
+        ? Math.max(1300, (slide.audioBuffer.duration / playbackRate) * 1000)
+        : Math.max(1750, fullUpperText.length * 58);
       const started = performance.now();
 
-      emitAtProgress(0.03);
+      emitAtProgress(0.01);
 
       const interval = setInterval(() => {
         if (this.playbackCancelled) {
@@ -780,20 +844,22 @@ class RetroSoundEngine {
           return;
         }
 
-        const elapsedMs = performance.now() - started;
-        const elapsedSec = elapsedMs / 1000;
+        const wallElapsedMs = performance.now() - started;
+        const wallElapsedSec = wallElapsedMs / 1000;
+        const bufferElapsedSec = wallElapsedSec * playbackRate;
 
-        // If user taps the screen during boot, immediately unlock and start the Fish Audio voice at the current syllable!
+        // If user taps the screen during boot, immediately unlock and start the Fish Audio voice at the exact playhead!
         if (!audioStartedMidSlide && slide.audioBuffer && !this.isMuted && ctx.state === 'running') {
           audioStartedMidSlide = true;
           try {
             const source = ctx.createBufferSource();
             source.buffer = slide.audioBuffer;
+            source.playbackRate.value = playbackRate;
             this.activeVoiceSource = source;
             source.connect(ctx.destination);
             const offsetSec = Math.min(
               slide.audioBuffer.duration - 0.05,
-              Math.max(0, trimStart + elapsedSec)
+              Math.max(0, trimStart + bufferElapsedSec)
             );
             source.start(0, offsetSec);
           } catch {
@@ -802,14 +868,14 @@ class RetroSoundEngine {
         }
 
         const progress = envelope
-          ? getEnvelopeSpeechProgress(envelope, elapsedSec)
-          : Math.min(1, (elapsedMs + 45) / durationMs);
+          ? getEnvelopeSpeechProgress(envelope, bufferElapsedSec)
+          : Math.min(1, wallElapsedMs / durationMs);
 
         emitAtProgress(progress);
-        if (elapsedMs >= durationMs) {
+        if (wallElapsedMs >= durationMs) {
           clearInterval(interval);
           emitAtProgress(1);
-          setTimeout(resolve, 140);
+          setTimeout(resolve, postSlidePauseMs);
         }
       }, 20);
     });

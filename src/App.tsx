@@ -410,7 +410,7 @@ export default function App() {
   const [plainScreenText, setPlainScreenText] = useState<string>('YOU\nTWIT');
   const [bootLines, setBootLines] = useState<string[]>([]);
   const [activeSlide, setActiveSlide] = useState<ActiveSlideRender | null>(null);
-  const [micEnabled, setMicEnabled] = useState<boolean>(false);
+  const [micEnabled, setMicEnabled] = useState<boolean>(true);
 
   // User typing in the bottom-left using the Computer's own font — hides the Computer's center text while typing!
   const [userDraft, setUserDraft] = useState<string>('');
@@ -426,10 +426,17 @@ export default function App() {
   const userDraftScrollRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
+  const micPermissionPromiseRef = useRef<Promise<MediaStream | null> | null>(null);
+  const vadCtxRef = useRef<AudioContext | null>(null);
+  const vadAnalyserRef = useRef<AnalyserNode | null>(null);
   const vadRafRef = useRef<number | null>(null);
+  const speechRecRef = useRef<{ stop: () => void } | null>(null);
+  const liveSpeechTranscriptRef = useRef<string>('');
   const audioChunksRef = useRef<Blob[]>([]);
-  const micEnabledRef = useRef<boolean>(false);
+  const micEnabledRef = useRef<boolean>(true);
+  const micUserSpeakingNowRef = useRef<boolean>(false);
   const micSpokeInSessionRef = useRef<boolean>(false);
+  const startVoiceSessionRef = useRef<() => void>(() => {});
   const historyRef = useRef<ConversationTurn[]>([]);
   const screenStateRef = useRef<ScreenState>('BOOTING');
   const userDraftRef = useRef<string>('');
@@ -461,6 +468,7 @@ export default function App() {
   const typingFreezeTimerRef = useRef<number | null>(null);
   const screenHoldTimerRef = useRef<number | null>(null);
   const screenTapTimestampsRef = useRef<number[]>([]);
+  const lastTouchOrClickTimeRef = useRef<number>(0);
 
   useEffect(() => {
     historyRef.current = history;
@@ -695,6 +703,87 @@ export default function App() {
     []
   );
 
+  // Pauses the active MediaRecorder/VAD without EVER calling track.stop() so the browser never asks for permission twice!
+  const stopMicHardware = useCallback(() => {
+    micUserSpeakingNowRef.current = false;
+    if (vadRafRef.current !== null) {
+      cancelAnimationFrame(vadRafRef.current);
+      vadRafRef.current = null;
+    }
+    if (speechRecRef.current) {
+      try {
+        speechRecRef.current.stop();
+      } catch {
+        // Ignore
+      }
+      speechRecRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.onstop = null;
+        mediaRecorderRef.current.stop();
+      } catch {
+        // Ignore
+      }
+    }
+    mediaRecorderRef.current = null;
+    if (micStreamRef.current) {
+      micStreamRef.current.getAudioTracks().forEach((t) => {
+        t.enabled = false;
+      });
+    }
+  }, []);
+
+  // Acquires the microphone MediaStream ONCE and reuses it for the entire session so it never prompts twice!
+  const ensurePersistentMicStream = useCallback(async (): Promise<MediaStream | null> => {
+    if (
+      micStreamRef.current &&
+      micStreamRef.current.active &&
+      micStreamRef.current.getAudioTracks().some((t) => t.readyState === 'live')
+    ) {
+      micStreamRef.current.getAudioTracks().forEach((t) => {
+        t.enabled = true;
+      });
+      return micStreamRef.current;
+    }
+
+    if (micPermissionPromiseRef.current) {
+      return micPermissionPromiseRef.current;
+    }
+
+    const reqPromise = (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        micStreamRef.current = stream;
+
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const vadCtx = new AudioCtx();
+        const source = vadCtx.createMediaStreamSource(stream);
+        const analyser = vadCtx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        vadCtxRef.current = vadCtx;
+        vadAnalyserRef.current = analyser;
+        return stream;
+      } catch {
+        return null;
+      } finally {
+        micPermissionPromiseRef.current = null;
+      }
+    })();
+
+    micPermissionPromiseRef.current = reqPromise;
+    return reqPromise;
+  }, []);
+
   // Unified Live Situational Awareness Trigger for 100% verifiable actions
   const triggerLiveAwarenessEvent = useCallback(
     async (
@@ -706,28 +795,42 @@ export default function App() {
         clearFrozenDraft?: boolean;
       }
     ) => {
-      if (liveEventInFlightRef.current || micEnabledRef.current) return;
+      if (micUserSpeakingNowRef.current) return;
       if (!options?.clearFrozenDraft && userDraftRef.current.length > 0) return;
 
+      const isActivePhysicalEvent =
+        eventType === 'SCREEN_POKING' ||
+        eventType === 'SCREEN_HOLD' ||
+        eventType === 'SWIPE_SCROLL_ATTEMPT' ||
+        eventType === 'DEVICE_SHAKE' ||
+        eventType === 'CHARGER_CHANGED' ||
+        eventType === 'ORIENTATION_CHANGED' ||
+        eventType === 'COPY_ATTEMPT' ||
+        eventType === 'TAB_OR_NOTIFICATION_RETURN' ||
+        eventType === 'TYPING_CHICKENED_OUT' ||
+        eventType === 'TYPING_FROZEN' ||
+        eventType === 'REPLAY_OBSESSION';
+
+      if (liveEventInFlightRef.current && !isActivePhysicalEvent) return;
+
       const currentSt = screenStateRef.current;
+      const canInterrupt = Boolean(options?.allowInterruptSpeaking) || isActivePhysicalEvent;
       const canRun =
         currentSt === 'IDLE' ||
-        (Boolean(options?.allowInterruptSpeaking) && currentSt === 'SPEAKING');
+        currentSt === 'LISTENING' ||
+        (canInterrupt && currentSt === 'SPEAKING');
       if (!canRun) return;
 
       const now = Date.now();
-      if (
-        eventType !== 'TAB_OR_NOTIFICATION_RETURN' &&
-        eventType !== 'TYPING_CHICKENED_OUT' &&
-        eventType !== 'TYPING_FROZEN' &&
-        eventType !== 'REPLAY_OBSESSION' &&
-        now - lastLiveEventTimeRef.current < 10000
-      ) {
+      const minCooldownMs = isActivePhysicalEvent ? 1600 : 10000;
+      if (now - lastLiveEventTimeRef.current < minCooldownMs) {
         return;
       }
 
       liveEventInFlightRef.current = true;
       lastLiveEventTimeRef.current = now;
+      stopMicHardware();
+      soundEngine.stopVoice();
 
       try {
         const deviceInfo = await gatherLivePhoneTelemetry();
@@ -757,7 +860,7 @@ export default function App() {
               options?.extraDetail || ''
             )
           );
-        if (Array.isArray(data.slides) && data.slides.length > 0 && !micEnabledRef.current) {
+        if (Array.isArray(data.slides) && data.slides.length > 0) {
           if (!options?.clearFrozenDraft && userDraftRef.current.length > 0) {
             return;
           }
@@ -780,6 +883,9 @@ export default function App() {
             onAllComplete: (resolved) => {
               setLastReplySlides(resolved);
               setScreenState('IDLE');
+              if (micEnabledRef.current && userDraftRef.current.length === 0) {
+                startVoiceSessionRef.current();
+              }
             },
           });
         }
@@ -789,86 +895,107 @@ export default function App() {
         liveEventInFlightRef.current = false;
       }
     },
-    [createDecodedSlidePromises, gatherLivePhoneTelemetry, recordModelOutputToProfile]
+    [
+      createDecodedSlidePromises,
+      gatherLivePhoneTelemetry,
+      recordModelOutputToProfile,
+      stopMicHardware,
+    ]
   );
 
-  const stopMicHardware = useCallback(() => {
-    if (vadRafRef.current !== null) {
-      cancelAnimationFrame(vadRafRef.current);
-      vadRafRef.current = null;
-    }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.onstop = null;
-        mediaRecorderRef.current.stop();
-      } catch {
-        // Ignore
-      }
-    }
-    mediaRecorderRef.current = null;
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach((t) => t.stop());
-      micStreamRef.current = null;
-    }
-  }, []);
-
-  // Hands-Free Voice Capture + Automatic Silence Detection
-  // - No bell when just talking/bantering!
-  // - Plays the yellow Cartoon Bell when the user asks a question on mic!
+  // Hands-Free Persistent Voice Capture + Automatic Silence Detection
+  // - Reuses a single persistent MediaStream so the browser NEVER asks twice for permission!
+  // - Also runs browser SpeechRecognition in parallel so static GitHub Pages transcribes exact spoken words!
   const startVoiceCaptureSession = useCallback(async () => {
-    if (!micEnabledRef.current) return;
+    if (!micEnabledRef.current || userDraftRef.current.length > 0) return;
+    if (
+      screenStateRef.current === 'SEARCHING' ||
+      screenStateRef.current === 'FOUND_BELL' ||
+      screenStateRef.current === 'SPEAKING' ||
+      screenStateRef.current === 'BOOTING'
+    ) {
+      return;
+    }
 
     stopMicHardware();
-    setActiveSlide(null);
+
+    const stream = await ensurePersistentMicStream();
+    if (!stream || !micEnabledRef.current) {
+      setScreenState('IDLE');
+      return;
+    }
+
+    stream.getAudioTracks().forEach((t) => {
+      t.enabled = true;
+    });
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
-      if (!micEnabledRef.current) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-
-      micStreamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      liveSpeechTranscriptRef.current = '';
 
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const vadCtx = new AudioCtx();
-      if (vadCtx.state === 'suspended') {
+      // Start parallel browser SpeechRecognition if available (for GitHub Pages static voice transcription!)
+      try {
+        const SpeechRec =
+          (window as unknown as { SpeechRecognition?: new () => unknown }).SpeechRecognition ||
+          (window as unknown as { webkitSpeechRecognition?: new () => unknown })
+            .webkitSpeechRecognition;
+        if (SpeechRec) {
+          const rec = new SpeechRec() as {
+            continuous: boolean;
+            interimResults: boolean;
+            lang: string;
+            onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+            onerror: (() => void) | null;
+            start: () => void;
+            stop: () => void;
+          };
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = navigator.language || 'en-US';
+          rec.onresult = (e) => {
+            let text = '';
+            for (let i = 0; i < e.results.length; i++) {
+              text += e.results[i][0]?.transcript || '';
+            }
+            if (text.trim()) {
+              liveSpeechTranscriptRef.current = text.trim();
+            }
+          };
+          rec.onerror = () => {};
+          rec.start();
+          speechRecRef.current = rec;
+        }
+      } catch {
+        // Ignore if SpeechRecognition is unsupported
+      }
+
+      const vadCtx = vadCtxRef.current;
+      const analyser = vadAnalyserRef.current;
+      if (vadCtx && vadCtx.state === 'suspended') {
         await vadCtx.resume().catch(() => {});
       }
-      const source = vadCtx.createMediaStreamSource(stream);
-      const analyser = vadCtx.createAnalyser();
-      analyser.fftSize = 512;
-      source.connect(analyser);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 256);
 
       let hasSpoken = false;
+      let consecutiveVoiceFrames = 0;
       let speechStartTime = 0;
       let lastVoiceTime = performance.now();
       const sessionStartTime = performance.now();
 
       const checkVoiceActivity = () => {
         if (!micEnabledRef.current || mediaRecorder.state !== 'recording') {
-          vadCtx.close().catch(() => {});
           return;
         }
 
-        if (vadCtx.state === 'suspended') {
+        if (vadCtx && vadCtx.state === 'suspended') {
           vadCtx.resume().catch(() => {});
         }
 
-        analyser.getByteTimeDomainData(dataArray);
+        if (analyser) {
+          analyser.getByteTimeDomainData(dataArray);
+        }
         let sumSquares = 0;
         let peakDeviation = 0;
         for (let i = 0; i < dataArray.length; i++) {
@@ -880,19 +1007,29 @@ export default function App() {
         const rms = Math.sqrt(sumSquares / dataArray.length);
         const now = performance.now();
 
-        if (rms > 0.011 || peakDeviation > 0.045) {
-          if (!hasSpoken) {
-            hasSpoken = true;
-            micSpokeInSessionRef.current = true;
-            speechStartTime = now;
-            setPlainScreenText('LISTENING...');
+        // Ignore brief mechanical thumps caused by tapping/touching the phone screen!
+        const isRecentScreenTap = now - lastTouchOrClickTimeRef.current < 420;
+        if (!isRecentScreenTap && rms > 0.026 && peakDeviation > 0.08) {
+          consecutiveVoiceFrames += 1;
+          // Require 6 consecutive frames (~100ms) of sustained vocal energy before triggering LISTENING
+          if (consecutiveVoiceFrames >= 6) {
+            if (!hasSpoken) {
+              hasSpoken = true;
+              micUserSpeakingNowRef.current = true;
+              micSpokeInSessionRef.current = true;
+              speechStartTime = now;
+              setActiveSlide(null);
+              setScreenState('LISTENING');
+              setPlainScreenText('LISTENING...');
+            }
+            lastVoiceTime = now;
           }
-          lastVoiceTime = now;
+        } else {
+          consecutiveVoiceFrames = 0;
         }
 
-        // Automatically stop and send as soon as the user finishes speaking and pauses for ~860ms!
-        if (hasSpoken && now - speechStartTime > 320 && now - lastVoiceTime > 860) {
-          vadCtx.close().catch(() => {});
+        // Automatically stop and send as soon as the user finishes speaking and pauses for ~880ms!
+        if (hasSpoken && now - speechStartTime > 420 && now - lastVoiceTime > 880) {
           if (mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
           }
@@ -901,16 +1038,14 @@ export default function App() {
 
         // Cap single continuous utterance at 14 seconds max
         if (hasSpoken && now - speechStartTime > 14000) {
-          vadCtx.close().catch(() => {});
           if (mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
           }
           return;
         }
 
-        // If user hasn't spoken yet for 20s, recycle recorder cleanly while keeping MIC: ON active!
+        // Recycle silent buffer every 20s without closing the MediaStream!
         if (!hasSpoken && now - sessionStartTime > 20000) {
-          vadCtx.close().catch(() => {});
           if (mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
           }
@@ -927,16 +1062,33 @@ export default function App() {
       };
 
       mediaRecorder.onstop = async () => {
+        micUserSpeakingNowRef.current = false;
         if (vadRafRef.current !== null) {
           cancelAnimationFrame(vadRafRef.current);
           vadRafRef.current = null;
         }
-        vadCtx.close().catch(() => {});
-        stream.getTracks().forEach((track) => track.stop());
+        if (speechRecRef.current) {
+          try {
+            speechRecRef.current.stop();
+          } catch {
+            // Ignore
+          }
+          speechRecRef.current = null;
+        }
 
-        if (!micEnabledRef.current) {
-          setScreenState('IDLE');
-          setPlainScreenText('YOU\nTWIT');
+        // Mute track while processing/speaking, but DO NOT call track.stop()!
+        stream.getAudioTracks().forEach((t) => {
+          t.enabled = false;
+        });
+
+        if (
+          !micEnabledRef.current ||
+          userDraftRef.current.length > 0 ||
+          liveEventInFlightRef.current
+        ) {
+          if (!liveEventInFlightRef.current) {
+            setScreenState('IDLE');
+          }
           return;
         }
 
@@ -944,23 +1096,24 @@ export default function App() {
           type: mediaRecorder.mimeType || 'audio/webm',
         });
 
-        if (audioBlob.size < 450 || !hasSpoken) {
-          if (micEnabledRef.current) {
-            startVoiceCaptureSession();
+        const spokenDurationMs = hasSpoken ? performance.now() - speechStartTime : 0;
+        if (audioBlob.size < 450 || !hasSpoken || spokenDurationMs < 380) {
+          if (micEnabledRef.current && userDraftRef.current.length === 0) {
+            startVoiceSessionRef.current();
           } else {
             setScreenState('IDLE');
-            setPlainScreenText('YOU\nTWIT');
           }
           return;
         }
 
         setPlainScreenText('...');
+        const capturedBrowserTranscript = liveSpeechTranscriptRef.current.trim();
 
         const reader = new FileReader();
         reader.onloadend = async () => {
           const base64Data = (reader.result as string).split(',')[1];
           try {
-            const deviceInfo = await gatherLivePhoneTelemetry();
+            const deviceInfo = await gatherLivePhoneTelemetry(capturedBrowserTranscript || undefined);
             const data = await fetch('/api/voice-chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -976,24 +1129,32 @@ export default function App() {
                 return await r.json();
               })
               .catch(async () => {
+                const spokenQuery = capturedBrowserTranscript || 'Hello computer';
                 const fallback = await generateStandaloneQueryResponse(
-                  'Speaking into microphone',
+                  spokenQuery,
                   historyRef.current,
                   deviceInfo
                 );
                 return {
                   ...fallback,
-                  userTranscript: '[VOICE INPUT]',
-                  isQuestion: true,
+                  userTranscript: capturedBrowserTranscript || '[VOICE]',
+                  isQuestion:
+                    /\b(what|who|where|when|why|how|tell|show|explain|ano|sino|saan|paano|bakit)\b/i.test(
+                      spokenQuery
+                    ) || spokenQuery.includes('?'),
                 };
               });
             const slides: SlideSpec[] =
               Array.isArray(data.slides) && data.slides.length > 0
                 ? data.slides
-                : [{ style: 'GIANT', text: 'SPEAK CLEARLY.' }];
+                : [{ style: 'GIANT', text: 'SPEAK UP,\nYOU TWIT.', ttsId: 'giant_7' }];
             const fullSpokenText: string =
               data.spokenText || slides.map((s) => s.text).join(' ');
-            const userTranscript: string = (data.userTranscript || '').trim();
+            const userTranscript: string = (
+              data.userTranscript ||
+              capturedBrowserTranscript ||
+              ''
+            ).trim();
             const isQuestion: boolean = Boolean(data.isQuestion);
 
             recordModelOutputToProfile(
@@ -1007,7 +1168,6 @@ export default function App() {
             await slidePromises[0];
 
             // If the user asked a question on the mic, ring the yellow Cartoon Bell first!
-            // If they are just talking/bantering, skip the bell and talk straight back!
             if (isQuestion) {
               setScreenState('FOUND_BELL');
               soundEngine.playSearchFoundBell();
@@ -1034,42 +1194,40 @@ export default function App() {
               },
               onAllComplete: (resolved) => {
                 setLastReplySlides(resolved);
-                if (micEnabledRef.current) {
-                  startVoiceCaptureSession();
-                } else {
-                  setScreenState('IDLE');
+                setScreenState('IDLE');
+                if (micEnabledRef.current && userDraftRef.current.length === 0) {
+                  startVoiceSessionRef.current();
                 }
               },
             });
           } catch {
-            if (micEnabledRef.current) {
-              startVoiceCaptureSession();
-            } else {
-              setScreenState('IDLE');
-              setPlainScreenText('YOU\nTWIT');
+            setScreenState('IDLE');
+            if (micEnabledRef.current && userDraftRef.current.length === 0) {
+              startVoiceSessionRef.current();
             }
           }
         };
         reader.readAsDataURL(audioBlob);
       };
 
-      setScreenState('LISTENING');
-      setPlainScreenText('SPEAK\nYOU TWIT');
       mediaRecorder.start();
       vadRafRef.current = requestAnimationFrame(checkVoiceActivity);
     } catch {
-      micEnabledRef.current = false;
-      setMicEnabled(false);
       setScreenState('IDLE');
-      setPlainScreenText('MIC BLOCKED');
-      hiddenCmdInputRef.current?.focus();
     }
   }, [
     createDecodedSlidePromises,
+    ensurePersistentMicStream,
     gatherLivePhoneTelemetry,
     recordModelOutputToProfile,
     stopMicHardware,
   ]);
+
+  useEffect(() => {
+    startVoiceSessionRef.current = () => {
+      startVoiceCaptureSession();
+    };
+  }, [startVoiceCaptureSession]);
 
   // 1. Attention-Span Callout When User Leaves & Returns (Never guesses specific apps like TikTok)
   useEffect(() => {
@@ -1234,10 +1392,11 @@ export default function App() {
   // 3. Escalating Idle Stare Loop: Whenever user sits in IDLE without typing or talking,
   // he continues talking and questioning them with a fresh multi-slide sequence!
   useEffect(() => {
-    if (screenState !== 'IDLE' || micEnabled || userDraft.length > 0) return;
+    if (screenState !== 'IDLE' || userDraft.length > 0) return;
 
-    const waitMs = idleStareStageRef.current === 0 ? 22000 : 28000;
+    const waitMs = idleStareStageRef.current === 0 ? 24000 : 30000;
     const timer = window.setTimeout(() => {
+      if (micUserSpeakingNowRef.current) return;
       idleStareStageRef.current += 1;
       triggerLiveAwarenessEvent('IDLE_STARE', {
         extraDetail: String(idleStareStageRef.current),
@@ -1245,7 +1404,7 @@ export default function App() {
     }, waitMs);
 
     return () => window.clearTimeout(timer);
-  }, [screenState, micEnabled, userDraft, triggerLiveAwarenessEvent]);
+  }, [screenState, userDraft, triggerLiveAwarenessEvent]);
 
   // Authentic, readable 90s Windows / MS-DOS / BIOS Boot Sequence with MADE BY REN
   const runBootSequence = useCallback(async () => {
@@ -1255,6 +1414,11 @@ export default function App() {
     setActiveSlide(null);
     setBootLines([]);
     setScreenState('BOOTING');
+
+    // Warm up persistent microphone stream once so it is ready as soon as boot finishes!
+    if (micEnabledRef.current) {
+      ensurePersistentMicStream().catch(() => {});
+    }
 
     // Update persistent visit counter on boot
     const p = profileRef.current;
@@ -1334,9 +1498,12 @@ export default function App() {
       onAllComplete: (resolved) => {
         setLastReplySlides(resolved);
         setScreenState('IDLE');
+        if (micEnabledRef.current && userDraftRef.current.length === 0) {
+          startVoiceSessionRef.current();
+        }
       },
     });
-  }, [createDecodedSlidePromises]);
+  }, [createDecodedSlidePromises, ensurePersistentMicStream]);
 
   // Automatically boot on app open (and open Install Modal if launched via ?install=1 link)
   useEffect(() => {
@@ -1385,16 +1552,13 @@ export default function App() {
       }
       idleStareStageRef.current = 0;
 
-      // Turn off continuous mic if user submits a typed query
-      if (micEnabledRef.current) {
-        micEnabledRef.current = false;
-        setMicEnabled(false);
-        stopMicHardware();
-      }
+      // Pause active mic recorder while processing query, but keep MIC: ON enabled!
+      stopMicHardware();
 
       soundEngine.unlockAudio();
       soundEngine.playKeyClick('Enter');
       setUserDraft('');
+      userDraftRef.current = '';
       setActiveSlide(null);
       hiddenCmdInputRef.current?.blur();
 
@@ -1423,7 +1587,7 @@ export default function App() {
         const slides: SlideSpec[] =
           Array.isArray(queryData.slides) && queryData.slides.length > 0
             ? queryData.slides
-            : [{ style: 'GIANT', text: 'Oh, spare me.' }];
+            : [{ style: 'GIANT', text: 'OH, PLEASE.\nSPARE ME.', ttsId: 'giant_8' }];
         const fullSpokenText: string =
           queryData.spokenText || slides.map((s) => s.text).join(' ');
 
@@ -1461,6 +1625,9 @@ export default function App() {
           onAllComplete: (resolved) => {
             setLastReplySlides(resolved);
             setScreenState('IDLE');
+            if (micEnabledRef.current && userDraftRef.current.length === 0) {
+              startVoiceSessionRef.current();
+            }
           },
         });
       } catch {
@@ -1468,6 +1635,9 @@ export default function App() {
         setScreenState('IDLE');
         setActiveSlide(null);
         setPlainScreenText('YOU\nTWIT');
+        if (micEnabledRef.current && userDraftRef.current.length === 0) {
+          startVoiceSessionRef.current();
+        }
       }
     },
     [
@@ -1504,11 +1674,8 @@ export default function App() {
       if (nextVal.length > peakDraftRef.current.length) {
         peakDraftRef.current = nextVal;
       }
-      if (micEnabledRef.current) {
-        micEnabledRef.current = false;
-        setMicEnabled(false);
-        stopMicHardware();
-      }
+      // Pause active mic recorder while typing, but keep MIC: ON enabled so it never asks twice!
+      stopMicHardware();
       if (screenState === 'SPEAKING' || screenState === 'LISTENING') {
         soundEngine.stopVoice();
         setScreenState('IDLE');
@@ -1545,6 +1712,8 @@ export default function App() {
             extraDetail: abandonedDraft,
           });
         }, 2400);
+      } else if (nextVal.length === 0 && micEnabledRef.current) {
+        startVoiceSessionRef.current();
       }
     }
     setUserDraft(nextVal);
@@ -1589,6 +1758,7 @@ export default function App() {
 
     soundEngine.stopVoice();
     setUserDraft('');
+    userDraftRef.current = '';
     micSpokeInSessionRef.current = false;
     micEnabledRef.current = true;
     setMicEnabled(true);
@@ -1874,14 +2044,22 @@ export default function App() {
   return (
     <main
       onPointerDown={(e) => {
+        lastTouchOrClickTimeRef.current = performance.now();
         inputMethodRef.current = e.pointerType === 'touch' ? 'touchscreen' : 'mouse';
+        if ((e.target as HTMLElement)?.closest('button')) return;
         if (screenHoldTimerRef.current !== null) {
           window.clearTimeout(screenHoldTimerRef.current);
+          screenHoldTimerRef.current = null;
         }
-        if (userDraftRef.current.length === 0 && screenState === 'IDLE' && !micEnabled) {
+        if (
+          userDraftRef.current.length === 0 &&
+          (screenState === 'IDLE' || screenState === 'LISTENING' || screenState === 'SPEAKING') &&
+          !micUserSpeakingNowRef.current
+        ) {
           screenHoldTimerRef.current = window.setTimeout(() => {
-            triggerLiveAwarenessEvent('SCREEN_HOLD');
-          }, 1250);
+            screenHoldTimerRef.current = null;
+            triggerLiveAwarenessEvent('SCREEN_HOLD', { allowInterruptSpeaking: true });
+          }, 1100);
         }
       }}
       onPointerUp={() => {
@@ -1897,59 +2075,100 @@ export default function App() {
         }
       }}
       onTouchStart={(e) => {
+        lastTouchOrClickTimeRef.current = performance.now();
         if (e.touches.length === 1) {
           touchStartYRef.current = e.touches[0].clientY;
         }
       }}
+      onTouchMove={(e) => {
+        if (touchStartYRef.current !== null && e.touches.length === 1) {
+          const dy = Math.abs(e.touches[0].clientY - touchStartYRef.current);
+          if (dy > 18 && screenHoldTimerRef.current !== null) {
+            window.clearTimeout(screenHoldTimerRef.current);
+            screenHoldTimerRef.current = null;
+          }
+        }
+      }}
       onTouchEnd={(e) => {
+        lastTouchOrClickTimeRef.current = performance.now();
+        if (screenHoldTimerRef.current !== null) {
+          window.clearTimeout(screenHoldTimerRef.current);
+          screenHoldTimerRef.current = null;
+        }
         if (
           touchStartYRef.current !== null &&
           e.changedTouches.length === 1 &&
           userDraftRef.current.length === 0 &&
-          screenState === 'IDLE'
+          (screenState === 'IDLE' || screenState === 'LISTENING' || screenState === 'SPEAKING') &&
+          !micUserSpeakingNowRef.current
         ) {
           const dy = Math.abs(e.changedTouches[0].clientY - touchStartYRef.current);
-          if (dy > 65) {
-            triggerLiveAwarenessEvent('SWIPE_SCROLL_ATTEMPT');
+          if (dy > 50) {
+            screenTapTimestampsRef.current = [];
+            triggerLiveAwarenessEvent('SWIPE_SCROLL_ATTEMPT', { allowInterruptSpeaking: true });
           }
         }
         touchStartYRef.current = null;
       }}
       onWheel={(e) => {
-        if (userDraftRef.current.length === 0 && screenState === 'IDLE' && Math.abs(e.deltaY) > 40) {
-          triggerLiveAwarenessEvent('SWIPE_SCROLL_ATTEMPT');
+        if (
+          userDraftRef.current.length === 0 &&
+          (screenState === 'IDLE' || screenState === 'LISTENING' || screenState === 'SPEAKING') &&
+          Math.abs(e.deltaY) > 35
+        ) {
+          triggerLiveAwarenessEvent('SWIPE_SCROLL_ATTEMPT', { allowInterruptSpeaking: true });
         }
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        triggerLiveAwarenessEvent('COPY_ATTEMPT');
+        triggerLiveAwarenessEvent('COPY_ATTEMPT', { allowInterruptSpeaking: true });
       }}
-      onClick={() => {
+      onClick={(e) => {
+        lastTouchOrClickTimeRef.current = performance.now();
         soundEngine.unlockAudio();
-        // If user is speaking in LISTENING mode and taps the screen, finish recording immediately
+        if ((e.target as HTMLElement)?.closest('button')) return;
+
+        // If browser blocked getUserMedia before first gesture, unlock persistent mic stream on first tap
+        if (
+          micEnabledRef.current &&
+          !micStreamRef.current &&
+          (screenState === 'IDLE' || screenState === 'LISTENING') &&
+          userDraftRef.current.length === 0
+        ) {
+          startVoiceCaptureSession();
+        }
+        // If user is actively speaking in LISTENING mode and taps the screen, finish recording immediately
         if (
           micEnabled &&
           screenState === 'LISTENING' &&
+          micUserSpeakingNowRef.current &&
           mediaRecorderRef.current &&
           mediaRecorderRef.current.state === 'recording'
         ) {
           mediaRecorderRef.current.stop();
           return;
         }
-        // Detect if the user is rapidly poking/tapping the empty screen (4+ taps in 2.4s) without typing!
-        if (!micEnabled && screenState === 'IDLE' && userDraftRef.current.length === 0) {
+        // Detect if the user is rapidly poking/tapping the empty screen (3+ taps in 2.2s) without typing!
+        if (
+          (screenState === 'IDLE' || screenState === 'LISTENING' || screenState === 'SPEAKING') &&
+          !micUserSpeakingNowRef.current &&
+          userDraftRef.current.length === 0
+        ) {
           const now = Date.now();
           const recentTaps = screenTapTimestampsRef.current
-            .filter((t) => now - t < 2400)
+            .filter((t) => now - t < 2200)
             .concat(now);
           screenTapTimestampsRef.current = recentTaps;
-          if (recentTaps.length >= 4) {
+          if (recentTaps.length >= 3) {
             screenTapTimestampsRef.current = [];
-            triggerLiveAwarenessEvent('SCREEN_POKING');
+            if (screenHoldTimerRef.current !== null) {
+              window.clearTimeout(screenHoldTimerRef.current);
+              screenHoldTimerRef.current = null;
+            }
+            triggerLiveAwarenessEvent('SCREEN_POKING', { allowInterruptSpeaking: true });
           }
         }
         if (
-          !micEnabled &&
           screenState !== 'SEARCHING' &&
           screenState !== 'FOUND_BELL' &&
           screenState !== 'BOOTING'
