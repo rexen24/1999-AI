@@ -371,14 +371,30 @@ const SpecimenPhotoBox: React.FC<{
   className?: string;
 }> = ({ imageUrl, label, className = 'w-28 h-24 sm:w-40 sm:h-32' }) => {
   const [imgFailed, setImgFailed] = useState(false);
+  const [opticMode, setOpticMode] = useState<'PHOSPHOR' | 'COLOR' | 'XRAY'>('PHOSPHOR');
 
   useEffect(() => {
     setImgFailed(false);
   }, [imageUrl]);
 
+  const filterClass =
+    opticMode === 'PHOSPHOR'
+      ? 'crt-photo-filter'
+      : opticMode === 'XRAY'
+      ? 'invert contrast-150 grayscale brightness-110'
+      : 'contrast-125 saturate-110 brightness-95';
+
   return (
     <div
-      className={`relative border-2 border-[#E2F6C2] bg-[#0A261E]/70 overflow-hidden shrink-0 flex items-center justify-center ${className}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        soundEngine.playKeyClick('Enter');
+        setOpticMode((prev) =>
+          prev === 'PHOSPHOR' ? 'COLOR' : prev === 'COLOR' ? 'XRAY' : 'PHOSPHOR'
+        );
+      }}
+      title="Tap specimen to cycle 1999 CRT optical mode"
+      className={`relative border-2 border-[#E2F6C2] bg-[#0A261E]/70 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer group ${className}`}
     >
       {imageUrl && !imgFailed ? (
         <img
@@ -386,7 +402,7 @@ const SpecimenPhotoBox: React.FC<{
           alt={label}
           referrerPolicy="no-referrer"
           onError={() => setImgFailed(true)}
-          className="w-full h-full object-cover crt-photo-filter"
+          className={`w-full h-full object-cover transition-all duration-150 ${filterClass}`}
         />
       ) : (
         <div className="w-full h-full p-2 flex items-center justify-center">
@@ -396,6 +412,10 @@ const SpecimenPhotoBox: React.FC<{
       {/* Animated CRT Scanner Laser Sweep Overlay */}
       <div className="absolute inset-x-0 top-0 h-1 bg-[#E2F6C2]/60 animate-[ping_2.4s_ease-in-out_infinite] pointer-events-none" />
       <div className="absolute inset-0 crt-scanlines pointer-events-none" />
+      {/* Optical Mode Readout Tag */}
+      <div className="absolute bottom-0.5 right-1 bg-[#0A261E]/85 px-1 text-[9px] sm:text-[10px] font-cmd uppercase phosphor-text pointer-events-none">
+        {opticMode}
+      </div>
       {/* Corner Targeting Brackets */}
       <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#E2F6C2] pointer-events-none" />
       <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-[#E2F6C2] pointer-events-none" />
@@ -469,6 +489,8 @@ export default function App() {
   const screenHoldTimerRef = useRef<number | null>(null);
   const screenTapTimestampsRef = useRef<number[]>([]);
   const lastTouchOrClickTimeRef = useRef<number>(0);
+  const lastKeystrokeTimeRef = useRef<number>(0);
+  const actionEpochRef = useRef<number>(0);
 
   useEffect(() => {
     historyRef.current = history;
@@ -721,12 +743,14 @@ export default function App() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.onstop = null;
+        mediaRecorderRef.current.ondataavailable = null;
         mediaRecorderRef.current.stop();
       } catch {
         // Ignore
       }
     }
     mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
     if (micStreamRef.current) {
       micStreamRef.current.getAudioTracks().forEach((t) => {
         t.enabled = false;
@@ -784,7 +808,9 @@ export default function App() {
     return reqPromise;
   }, []);
 
-  // Unified Live Situational Awareness Trigger for 100% verifiable actions
+  // Unified Live Situational Awareness Trigger:
+  // STRICT RULE: Only works when the Computer is NOT already speaking/searching/booting,
+  // and NEVER overlaps with user typing or another active speech sequence!
   const triggerLiveAwarenessEvent = useCallback(
     async (
       eventType: string,
@@ -795,38 +821,47 @@ export default function App() {
         clearFrozenDraft?: boolean;
       }
     ) => {
-      if (micUserSpeakingNowRef.current) return;
+      if (liveEventInFlightRef.current || micUserSpeakingNowRef.current) return;
       if (!options?.clearFrozenDraft && userDraftRef.current.length > 0) return;
 
-      const isActivePhysicalEvent =
+      // Never trigger while the Computer is already speaking, searching, ringing the bell, or booting!
+      const currentSt = screenStateRef.current;
+      if (currentSt !== 'IDLE' && currentSt !== 'LISTENING') {
+        return;
+      }
+
+      const now = Date.now();
+      const isScreenTouchSensor =
         eventType === 'SCREEN_POKING' ||
         eventType === 'SCREEN_HOLD' ||
         eventType === 'SWIPE_SCROLL_ATTEMPT' ||
+        eventType === 'ZOOM_ATTEMPT';
+
+      // If the user was typing within the last 3.5 seconds, ignore screen tap/hold/swipe sensors so typing+tapping never collides!
+      if (isScreenTouchSensor && now - lastKeystrokeTimeRef.current < 3500) {
+        return;
+      }
+
+      const isUserInitiatedSensor =
+        isScreenTouchSensor ||
+        eventType === 'BIOMETRIC_SCAN' ||
         eventType === 'DEVICE_SHAKE' ||
         eventType === 'CHARGER_CHANGED' ||
         eventType === 'ORIENTATION_CHANGED' ||
         eventType === 'COPY_ATTEMPT' ||
+        eventType === 'DEVTOOLS_ATTEMPT' ||
+        eventType === 'MUTE_TOGGLE_CAUGHT' ||
         eventType === 'TAB_OR_NOTIFICATION_RETURN' ||
         eventType === 'TYPING_CHICKENED_OUT' ||
         eventType === 'TYPING_FROZEN' ||
         eventType === 'REPLAY_OBSESSION';
 
-      if (liveEventInFlightRef.current && !isActivePhysicalEvent) return;
-
-      const currentSt = screenStateRef.current;
-      const canInterrupt = Boolean(options?.allowInterruptSpeaking) || isActivePhysicalEvent;
-      const canRun =
-        currentSt === 'IDLE' ||
-        currentSt === 'LISTENING' ||
-        (canInterrupt && currentSt === 'SPEAKING');
-      if (!canRun) return;
-
-      const now = Date.now();
-      const minCooldownMs = isActivePhysicalEvent ? 1600 : 10000;
+      const minCooldownMs = isUserInitiatedSensor ? 2200 : 12000;
       if (now - lastLiveEventTimeRef.current < minCooldownMs) {
         return;
       }
 
+      const myEpoch = ++actionEpochRef.current;
       liveEventInFlightRef.current = true;
       lastLiveEventTimeRef.current = now;
       stopMicHardware();
@@ -834,6 +869,8 @@ export default function App() {
 
       try {
         const deviceInfo = await gatherLivePhoneTelemetry();
+        if (actionEpochRef.current !== myEpoch) return;
+
         const data = await fetch('/api/boot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -860,27 +897,38 @@ export default function App() {
               options?.extraDetail || ''
             )
           );
+
+        if (actionEpochRef.current !== myEpoch) return;
+
         if (Array.isArray(data.slides) && data.slides.length > 0) {
           if (!options?.clearFrozenDraft && userDraftRef.current.length > 0) {
             return;
           }
-          soundEngine.stopVoice();
           const slidePromises = createDecodedSlidePromises(data.slides);
           await slidePromises[0];
+
+          if (actionEpochRef.current !== myEpoch) return;
+
           if (options?.clearFrozenDraft) {
             setUserDraft('');
             userDraftRef.current = '';
           } else if (userDraftRef.current.length > 0) {
             return;
           }
+
           const spoken =
             data.spokenText || data.slides.map((s: { text: string }) => s.text).join(' ');
           recordModelOutputToProfile(spoken);
           setHistory((prev) => [...prev.slice(-10), { role: 'model', text: spoken }]);
           setScreenState('SPEAKING');
           await soundEngine.playSlidePromisesSequentially(slidePromises, {
-            onSlideRender: (rendered) => setActiveSlide({ ...rendered }),
+            onSlideRender: (rendered) => {
+              if (actionEpochRef.current === myEpoch) {
+                setActiveSlide({ ...rendered });
+              }
+            },
             onAllComplete: (resolved) => {
+              if (actionEpochRef.current !== myEpoch) return;
               setLastReplySlides(resolved);
               setScreenState('IDLE');
               if (micEnabledRef.current && userDraftRef.current.length === 0) {
@@ -892,7 +940,11 @@ export default function App() {
       } catch {
         // Ignore transient network errors
       } finally {
-        liveEventInFlightRef.current = false;
+        if (actionEpochRef.current === myEpoch) {
+          liveEventInFlightRef.current = false;
+        } else {
+          liveEventInFlightRef.current = false;
+        }
       }
     },
     [
@@ -907,7 +959,9 @@ export default function App() {
   // - Reuses a single persistent MediaStream so the browser NEVER asks twice for permission!
   // - Also runs browser SpeechRecognition in parallel so static GitHub Pages transcribes exact spoken words!
   const startVoiceCaptureSession = useCallback(async () => {
-    if (!micEnabledRef.current || userDraftRef.current.length > 0) return;
+    if (!micEnabledRef.current || userDraftRef.current.length > 0 || liveEventInFlightRef.current) {
+      return;
+    }
     if (
       screenStateRef.current === 'SEARCHING' ||
       screenStateRef.current === 'FOUND_BELL' ||
@@ -920,8 +974,12 @@ export default function App() {
     stopMicHardware();
 
     const stream = await ensurePersistentMicStream();
-    if (!stream || !micEnabledRef.current) {
-      setScreenState('IDLE');
+    if (
+      !stream ||
+      !micEnabledRef.current ||
+      userDraftRef.current.length > 0 ||
+      screenStateRef.current !== 'IDLE'
+    ) {
       return;
     }
 
@@ -985,7 +1043,13 @@ export default function App() {
       const sessionStartTime = performance.now();
 
       const checkVoiceActivity = () => {
-        if (!micEnabledRef.current || mediaRecorder.state !== 'recording') {
+        if (
+          !micEnabledRef.current ||
+          mediaRecorder.state !== 'recording' ||
+          userDraftRef.current.length > 0 ||
+          liveEventInFlightRef.current ||
+          (screenStateRef.current !== 'IDLE' && screenStateRef.current !== 'LISTENING')
+        ) {
           return;
         }
 
@@ -1007,9 +1071,10 @@ export default function App() {
         const rms = Math.sqrt(sumSquares / dataArray.length);
         const now = performance.now();
 
-        // Ignore brief mechanical thumps caused by tapping/touching the phone screen!
-        const isRecentScreenTap = now - lastTouchOrClickTimeRef.current < 420;
-        if (!isRecentScreenTap && rms > 0.026 && peakDeviation > 0.08) {
+        // Ignore brief mechanical thumps caused by tapping/touching the phone screen or typing on the keyboard!
+        const isRecentScreenTap = now - lastTouchOrClickTimeRef.current < 500;
+        const isRecentKeystroke = Date.now() - lastKeystrokeTimeRef.current < 2500;
+        if (!isRecentScreenTap && !isRecentKeystroke && rms > 0.028 && peakDeviation > 0.085) {
           consecutiveVoiceFrames += 1;
           // Require 6 consecutive frames (~100ms) of sustained vocal energy before triggering LISTENING
           if (consecutiveVoiceFrames >= 6) {
@@ -1029,7 +1094,7 @@ export default function App() {
         }
 
         // Automatically stop and send as soon as the user finishes speaking and pauses for ~880ms!
-        if (hasSpoken && now - speechStartTime > 420 && now - lastVoiceTime > 880) {
+        if (hasSpoken && now - speechStartTime > 450 && now - lastVoiceTime > 880) {
           if (mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
           }
@@ -1084,9 +1149,11 @@ export default function App() {
         if (
           !micEnabledRef.current ||
           userDraftRef.current.length > 0 ||
-          liveEventInFlightRef.current
+          liveEventInFlightRef.current ||
+          Date.now() - lastKeystrokeTimeRef.current < 2500 ||
+          (screenStateRef.current !== 'IDLE' && screenStateRef.current !== 'LISTENING')
         ) {
-          if (!liveEventInFlightRef.current) {
+          if (screenStateRef.current === 'LISTENING') {
             setScreenState('IDLE');
           }
           return;
@@ -1097,23 +1164,31 @@ export default function App() {
         });
 
         const spokenDurationMs = hasSpoken ? performance.now() - speechStartTime : 0;
-        if (audioBlob.size < 450 || !hasSpoken || spokenDurationMs < 380) {
-          if (micEnabledRef.current && userDraftRef.current.length === 0) {
+        if (audioBlob.size < 450 || !hasSpoken || spokenDurationMs < 420) {
+          if (
+            micEnabledRef.current &&
+            userDraftRef.current.length === 0 &&
+            screenStateRef.current === 'IDLE'
+          ) {
             startVoiceSessionRef.current();
-          } else {
+          } else if (screenStateRef.current === 'LISTENING') {
             setScreenState('IDLE');
           }
           return;
         }
 
+        const myEpoch = ++actionEpochRef.current;
         setPlainScreenText('...');
         const capturedBrowserTranscript = liveSpeechTranscriptRef.current.trim();
 
         const reader = new FileReader();
         reader.onloadend = async () => {
+          if (actionEpochRef.current !== myEpoch || userDraftRef.current.length > 0) return;
           const base64Data = (reader.result as string).split(',')[1];
           try {
             const deviceInfo = await gatherLivePhoneTelemetry(capturedBrowserTranscript || undefined);
+            if (actionEpochRef.current !== myEpoch || userDraftRef.current.length > 0) return;
+
             const data = await fetch('/api/voice-chat', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1144,6 +1219,9 @@ export default function App() {
                     ) || spokenQuery.includes('?'),
                 };
               });
+
+            if (actionEpochRef.current !== myEpoch || userDraftRef.current.length > 0) return;
+
             const slides: SlideSpec[] =
               Array.isArray(data.slides) && data.slides.length > 0
                 ? data.slides
@@ -1164,14 +1242,15 @@ export default function App() {
             );
 
             const slidePromises = createDecodedSlidePromises(slides);
-
             await slidePromises[0];
+            if (actionEpochRef.current !== myEpoch || userDraftRef.current.length > 0) return;
 
             // If the user asked a question on the mic, ring the yellow Cartoon Bell first!
             if (isQuestion) {
               setScreenState('FOUND_BELL');
               soundEngine.playSearchFoundBell();
               await new Promise<void>((resolve) => setTimeout(resolve, 850));
+              if (actionEpochRef.current !== myEpoch || userDraftRef.current.length > 0) return;
             }
 
             if (userTranscript) {
@@ -1190,9 +1269,12 @@ export default function App() {
             setScreenState('SPEAKING');
             await soundEngine.playSlidePromisesSequentially(slidePromises, {
               onSlideRender: (rendered) => {
-                setActiveSlide({ ...rendered });
+                if (actionEpochRef.current === myEpoch) {
+                  setActiveSlide({ ...rendered });
+                }
               },
               onAllComplete: (resolved) => {
+                if (actionEpochRef.current !== myEpoch) return;
                 setLastReplySlides(resolved);
                 setScreenState('IDLE');
                 if (micEnabledRef.current && userDraftRef.current.length === 0) {
@@ -1201,9 +1283,11 @@ export default function App() {
               },
             });
           } catch {
-            setScreenState('IDLE');
-            if (micEnabledRef.current && userDraftRef.current.length === 0) {
-              startVoiceSessionRef.current();
+            if (actionEpochRef.current === myEpoch) {
+              setScreenState('IDLE');
+              if (micEnabledRef.current && userDraftRef.current.length === 0) {
+                startVoiceSessionRef.current();
+              }
             }
           }
         };
@@ -1408,6 +1492,7 @@ export default function App() {
 
   // Authentic, readable 90s Windows / MS-DOS / BIOS Boot Sequence with MADE BY REN
   const runBootSequence = useCallback(async () => {
+    const myEpoch = ++actionEpochRef.current;
     soundEngine.unlockAudio();
     soundEngine.stopVoice();
     soundEngine.playBootSequenceSound();
@@ -1475,13 +1560,17 @@ export default function App() {
 
     const accumulated: string[] = [];
     for (let i = 0; i < bootScript.length; i++) {
+      if (actionEpochRef.current !== myEpoch) return;
       accumulated.push(bootScript[i].line);
       setBootLines([...accumulated]);
       soundEngine.playTypewriterTick();
       await new Promise((r) => setTimeout(r, bootScript[i].delayMs));
     }
 
+    if (actionEpochRef.current !== myEpoch) return;
     const data = await bootFetchPromise;
+    if (actionEpochRef.current !== myEpoch) return;
+
     const slides: SlideSpec[] =
       Array.isArray(data.slides) && data.slides.length > 0
         ? data.slides
@@ -1489,13 +1578,17 @@ export default function App() {
 
     const slidePromises = createDecodedSlidePromises(slides);
     await slidePromises[0];
+    if (actionEpochRef.current !== myEpoch) return;
 
     setScreenState('SPEAKING');
     await soundEngine.playSlidePromisesSequentially(slidePromises, {
       onSlideRender: (rendered) => {
-        setActiveSlide({ ...rendered });
+        if (actionEpochRef.current === myEpoch) {
+          setActiveSlide({ ...rendered });
+        }
       },
       onAllComplete: (resolved) => {
+        if (actionEpochRef.current !== myEpoch) return;
         setLastReplySlides(resolved);
         setScreenState('IDLE');
         if (micEnabledRef.current && userDraftRef.current.length === 0) {
@@ -1522,7 +1615,21 @@ export default function App() {
         triggerLiveAwarenessEvent('COPY_ATTEMPT');
         return;
       }
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j')) ||
+        (e.ctrlKey && (e.key === 'U' || e.key === 'u'))
+      ) {
+        triggerLiveAwarenessEvent('DEVTOOLS_ATTEMPT');
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      lastKeystrokeTimeRef.current = Date.now();
+      screenTapTimestampsRef.current = [];
+      if (screenHoldTimerRef.current !== null) {
+        window.clearTimeout(screenHoldTimerRef.current);
+        screenHoldTimerRef.current = null;
+      }
       soundEngine.unlockAudio();
       if (
         document.activeElement !== hiddenCmdInputRef.current &&
@@ -1542,6 +1649,15 @@ export default function App() {
       const trimmed = rawQuery.trim();
       if (!trimmed) return;
 
+      const myEpoch = ++actionEpochRef.current;
+      lastKeystrokeTimeRef.current = Date.now();
+      liveEventInFlightRef.current = false;
+      screenTapTimestampsRef.current = [];
+
+      if (screenHoldTimerRef.current !== null) {
+        window.clearTimeout(screenHoldTimerRef.current);
+        screenHoldTimerRef.current = null;
+      }
       if (chickenOutTimerRef.current !== null) {
         window.clearTimeout(chickenOutTimerRef.current);
         chickenOutTimerRef.current = null;
@@ -1552,13 +1668,14 @@ export default function App() {
       }
       idleStareStageRef.current = 0;
 
-      // Pause active mic recorder while processing query, but keep MIC: ON enabled!
+      // Update userDraftRef BEFORE stopping mic so no async callback sees a stale draft!
+      userDraftRef.current = '';
+      setUserDraft('');
       stopMicHardware();
+      soundEngine.stopVoice();
 
       soundEngine.unlockAudio();
       soundEngine.playKeyClick('Enter');
-      setUserDraft('');
-      userDraftRef.current = '';
       setActiveSlide(null);
       hiddenCmdInputRef.current?.blur();
 
@@ -1569,6 +1686,10 @@ export default function App() {
 
       try {
         const deviceInfo = await gatherLivePhoneTelemetry(trimmed);
+        if (actionEpochRef.current !== myEpoch) {
+          stopWaitingSound();
+          return;
+        }
 
         const queryData = await fetch('/api/query', {
           method: 'POST',
@@ -1584,6 +1705,12 @@ export default function App() {
             return await r.json();
           })
           .catch(() => generateStandaloneQueryResponse(trimmed, history, deviceInfo));
+
+        if (actionEpochRef.current !== myEpoch) {
+          stopWaitingSound();
+          return;
+        }
+
         const slides: SlideSpec[] =
           Array.isArray(queryData.slides) && queryData.slides.length > 0
             ? queryData.slides
@@ -1601,6 +1728,10 @@ export default function App() {
 
         // Wait ONLY for Slide 1 to be ready before ringing the bell!
         await slidePromises[0];
+        if (actionEpochRef.current !== myEpoch) {
+          stopWaitingSound();
+          return;
+        }
 
         stopWaitingSound();
 
@@ -1609,6 +1740,7 @@ export default function App() {
         soundEngine.playSearchFoundBell();
 
         await new Promise<void>((resolve) => setTimeout(resolve, 850));
+        if (actionEpochRef.current !== myEpoch) return;
 
         setHistory((prev) => [
           ...prev.slice(-10),
@@ -1620,9 +1752,12 @@ export default function App() {
         setScreenState('SPEAKING');
         await soundEngine.playSlidePromisesSequentially(slidePromises, {
           onSlideRender: (rendered) => {
-            setActiveSlide({ ...rendered });
+            if (actionEpochRef.current === myEpoch) {
+              setActiveSlide({ ...rendered });
+            }
           },
           onAllComplete: (resolved) => {
+            if (actionEpochRef.current !== myEpoch) return;
             setLastReplySlides(resolved);
             setScreenState('IDLE');
             if (micEnabledRef.current && userDraftRef.current.length === 0) {
@@ -1632,11 +1767,13 @@ export default function App() {
         });
       } catch {
         stopWaitingSound();
-        setScreenState('IDLE');
-        setActiveSlide(null);
-        setPlainScreenText('YOU\nTWIT');
-        if (micEnabledRef.current && userDraftRef.current.length === 0) {
-          startVoiceSessionRef.current();
+        if (actionEpochRef.current === myEpoch) {
+          setScreenState('IDLE');
+          setActiveSlide(null);
+          setPlainScreenText('YOU\nTWIT');
+          if (micEnabledRef.current && userDraftRef.current.length === 0) {
+            startVoiceSessionRef.current();
+          }
         }
       }
     },
@@ -1653,6 +1790,17 @@ export default function App() {
     soundEngine.unlockAudio();
     const nextVal = e.target.value;
 
+    // Immediately update synchronous refs & cancel any pending tap/hold/live timers so typing and tapping NEVER collide!
+    lastKeystrokeTimeRef.current = Date.now();
+    userDraftRef.current = nextVal;
+    actionEpochRef.current += 1;
+    liveEventInFlightRef.current = false;
+    screenTapTimestampsRef.current = [];
+
+    if (screenHoldTimerRef.current !== null) {
+      window.clearTimeout(screenHoldTimerRef.current);
+      screenHoldTimerRef.current = null;
+    }
     if (chickenOutTimerRef.current !== null) {
       window.clearTimeout(chickenOutTimerRef.current);
       chickenOutTimerRef.current = null;
@@ -1664,7 +1812,6 @@ export default function App() {
 
     if (nextVal.length > 0) {
       // Clear the Computer's previous slide in the background as soon as you start typing
-      // so it never jumps back to his old text if you don't send it!
       setActiveSlide(null);
       setPlainScreenText('');
 
@@ -1681,14 +1828,16 @@ export default function App() {
         setScreenState('IDLE');
       }
 
-      // If user starts typing and freezes mid-sentence for 6.5 seconds without sending:
+      // If user starts typing and freezes mid-sentence for 6.5 seconds without sending (only when IDLE):
       if (nextVal.trim().length >= 2) {
         const frozenSnapshot = nextVal.trim();
         typingFreezeTimerRef.current = window.setTimeout(() => {
-          triggerLiveAwarenessEvent('TYPING_FROZEN', {
-            extraDetail: frozenSnapshot,
-            clearFrozenDraft: true,
-          });
+          if (screenStateRef.current === 'IDLE' && userDraftRef.current.trim() === frozenSnapshot) {
+            triggerLiveAwarenessEvent('TYPING_FROZEN', {
+              extraDetail: frozenSnapshot,
+              clearFrozenDraft: true,
+            });
+          }
         }, 6500);
       }
     }
@@ -1699,20 +1848,19 @@ export default function App() {
       soundEngine.playKeyClick('Backspace');
       backspaceCountRef.current += 1;
 
-      // If user typed a message (2+ chars) and deleted the whole thing back to empty:
-      // 1) Keep the screen clean (no old Computer text!)
-      // 2) Wait 2.4s and if they still haven't typed anything new, call them out aloud!
       if (nextVal.length === 0 && peakDraftRef.current.trim().length >= 2) {
         const abandonedDraft = peakDraftRef.current.trim();
         erasedBeforeSendRef.current = abandonedDraft;
         peakDraftRef.current = '';
         typingStartTimeRef.current = null;
         chickenOutTimerRef.current = window.setTimeout(() => {
-          triggerLiveAwarenessEvent('TYPING_CHICKENED_OUT', {
-            extraDetail: abandonedDraft,
-          });
-        }, 2400);
-      } else if (nextVal.length === 0 && micEnabledRef.current) {
+          if (screenStateRef.current === 'IDLE' && userDraftRef.current.length === 0) {
+            triggerLiveAwarenessEvent('TYPING_CHICKENED_OUT', {
+              extraDetail: abandonedDraft,
+            });
+          }
+        }, 2600);
+      } else if (nextVal.length === 0 && micEnabledRef.current && screenStateRef.current === 'IDLE') {
         startVoiceSessionRef.current();
       }
     }
@@ -1721,6 +1869,7 @@ export default function App() {
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     soundEngine.unlockAudio();
+    lastKeystrokeTimeRef.current = Date.now();
     if (e.key === 'Enter') {
       e.preventDefault();
       if (userDraft.trim()) {
@@ -1740,6 +1889,7 @@ export default function App() {
     e.stopPropagation();
     soundEngine.unlockAudio();
     soundEngine.playKeyClick('Enter');
+    actionEpochRef.current += 1;
 
     if (micEnabledRef.current) {
       const spokeAtAll = micSpokeInSessionRef.current;
@@ -1762,6 +1912,7 @@ export default function App() {
     micSpokeInSessionRef.current = false;
     micEnabledRef.current = true;
     setMicEnabled(true);
+    setScreenState('IDLE');
     await startVoiceCaptureSession();
   };
 
@@ -2051,15 +2202,24 @@ export default function App() {
           window.clearTimeout(screenHoldTimerRef.current);
           screenHoldTimerRef.current = null;
         }
+        // Only arm hold sensor when Computer is IDLE (not speaking) and user isn't typing!
         if (
           userDraftRef.current.length === 0 &&
-          (screenState === 'IDLE' || screenState === 'LISTENING' || screenState === 'SPEAKING') &&
-          !micUserSpeakingNowRef.current
+          Date.now() - lastKeystrokeTimeRef.current > 3500 &&
+          screenState === 'IDLE' &&
+          !micUserSpeakingNowRef.current &&
+          !liveEventInFlightRef.current
         ) {
           screenHoldTimerRef.current = window.setTimeout(() => {
             screenHoldTimerRef.current = null;
-            triggerLiveAwarenessEvent('SCREEN_HOLD', { allowInterruptSpeaking: true });
-          }, 1100);
+            if (
+              screenStateRef.current === 'IDLE' &&
+              userDraftRef.current.length === 0 &&
+              Date.now() - lastKeystrokeTimeRef.current > 3500
+            ) {
+              triggerLiveAwarenessEvent('SCREEN_HOLD');
+            }
+          }, 1250);
         }
       }}
       onPointerUp={() => {
@@ -2076,6 +2236,20 @@ export default function App() {
       }}
       onTouchStart={(e) => {
         lastTouchOrClickTimeRef.current = performance.now();
+        // 2-finger pinch-zoom attempt when IDLE!
+        if (
+          e.touches.length >= 2 &&
+          screenState === 'IDLE' &&
+          userDraftRef.current.length === 0 &&
+          Date.now() - lastKeystrokeTimeRef.current > 3500
+        ) {
+          if (screenHoldTimerRef.current !== null) {
+            window.clearTimeout(screenHoldTimerRef.current);
+            screenHoldTimerRef.current = null;
+          }
+          triggerLiveAwarenessEvent('ZOOM_ATTEMPT');
+          return;
+        }
         if (e.touches.length === 1) {
           touchStartYRef.current = e.touches[0].clientY;
         }
@@ -2099,13 +2273,15 @@ export default function App() {
           touchStartYRef.current !== null &&
           e.changedTouches.length === 1 &&
           userDraftRef.current.length === 0 &&
-          (screenState === 'IDLE' || screenState === 'LISTENING' || screenState === 'SPEAKING') &&
-          !micUserSpeakingNowRef.current
+          Date.now() - lastKeystrokeTimeRef.current > 3500 &&
+          screenState === 'IDLE' &&
+          !micUserSpeakingNowRef.current &&
+          !liveEventInFlightRef.current
         ) {
           const dy = Math.abs(e.changedTouches[0].clientY - touchStartYRef.current);
-          if (dy > 50) {
+          if (dy > 60) {
             screenTapTimestampsRef.current = [];
-            triggerLiveAwarenessEvent('SWIPE_SCROLL_ATTEMPT', { allowInterruptSpeaking: true });
+            triggerLiveAwarenessEvent('SWIPE_SCROLL_ATTEMPT');
           }
         }
         touchStartYRef.current = null;
@@ -2113,15 +2289,19 @@ export default function App() {
       onWheel={(e) => {
         if (
           userDraftRef.current.length === 0 &&
-          (screenState === 'IDLE' || screenState === 'LISTENING' || screenState === 'SPEAKING') &&
-          Math.abs(e.deltaY) > 35
+          Date.now() - lastKeystrokeTimeRef.current > 3500 &&
+          screenState === 'IDLE' &&
+          !liveEventInFlightRef.current &&
+          Math.abs(e.deltaY) > 40
         ) {
-          triggerLiveAwarenessEvent('SWIPE_SCROLL_ATTEMPT', { allowInterruptSpeaking: true });
+          triggerLiveAwarenessEvent('SWIPE_SCROLL_ATTEMPT');
         }
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        triggerLiveAwarenessEvent('COPY_ATTEMPT', { allowInterruptSpeaking: true });
+        if (screenState === 'IDLE' && userDraftRef.current.length === 0) {
+          triggerLiveAwarenessEvent('COPY_ATTEMPT');
+        }
       }}
       onClick={(e) => {
         lastTouchOrClickTimeRef.current = performance.now();
@@ -2132,7 +2312,7 @@ export default function App() {
         if (
           micEnabledRef.current &&
           !micStreamRef.current &&
-          (screenState === 'IDLE' || screenState === 'LISTENING') &&
+          screenState === 'IDLE' &&
           userDraftRef.current.length === 0
         ) {
           startVoiceCaptureSession();
@@ -2148,24 +2328,27 @@ export default function App() {
           mediaRecorderRef.current.stop();
           return;
         }
-        // Detect if the user is rapidly poking/tapping the empty screen (3+ taps in 2.2s) without typing!
+        // Detect if the user is rapidly poking/tapping the empty screen (4+ taps in 2.2s) ONLY when Computer is IDLE and user is NOT typing!
         if (
-          (screenState === 'IDLE' || screenState === 'LISTENING' || screenState === 'SPEAKING') &&
+          screenState === 'IDLE' &&
           !micUserSpeakingNowRef.current &&
-          userDraftRef.current.length === 0
+          !liveEventInFlightRef.current &&
+          userDraftRef.current.length === 0 &&
+          Date.now() - lastKeystrokeTimeRef.current > 3500
         ) {
           const now = Date.now();
           const recentTaps = screenTapTimestampsRef.current
             .filter((t) => now - t < 2200)
             .concat(now);
           screenTapTimestampsRef.current = recentTaps;
-          if (recentTaps.length >= 3) {
+          if (recentTaps.length >= 4) {
             screenTapTimestampsRef.current = [];
             if (screenHoldTimerRef.current !== null) {
               window.clearTimeout(screenHoldTimerRef.current);
               screenHoldTimerRef.current = null;
             }
-            triggerLiveAwarenessEvent('SCREEN_POKING', { allowInterruptSpeaking: true });
+            triggerLiveAwarenessEvent('SCREEN_POKING');
+            return;
           }
         }
         if (
@@ -2208,41 +2391,70 @@ export default function App() {
         />
       </form>
 
-      {/* Top Subtle Replay / Mic / App Download Trigger */}
+      {/* Top Subtle Replay / Scan / Mic / App Download Trigger */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
         className="w-full flex items-center justify-between z-30 shrink-0"
       >
-        {lastReplySlides && screenState === 'IDLE' ? (
-          <button
-            type="button"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={(e) => {
-              e.stopPropagation();
-              soundEngine.unlockAudio();
-              replayClickCountRef.current += 1;
-              if (replayClickCountRef.current >= 3) {
-                replayClickCountRef.current = 0;
-                triggerLiveAwarenessEvent('REPLAY_OBSESSION');
-                return;
-              }
-              setScreenState('SPEAKING');
-              soundEngine.playSlidePromisesSequentially(
-                lastReplySlides.map((s) => Promise.resolve(s)),
-                {
-                  onSlideRender: (rendered) => setActiveSlide({ ...rendered }),
-                  onAllComplete: () => setScreenState('IDLE'),
+        <div className="flex items-center gap-2 sm:gap-3">
+          {lastReplySlides && screenState === 'IDLE' && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                soundEngine.unlockAudio();
+                replayClickCountRef.current += 1;
+                if (replayClickCountRef.current >= 3) {
+                  replayClickCountRef.current = 0;
+                  triggerLiveAwarenessEvent('REPLAY_OBSESSION');
+                  return;
                 }
-              );
-            }}
-            className="min-h-[44px] px-2 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-65 hover:opacity-100 cursor-pointer touch-manipulation"
-          >
-            REPLAY
-          </button>
-        ) : (
-          <div />
-        )}
+                const myEpoch = ++actionEpochRef.current;
+                stopMicHardware();
+                setScreenState('SPEAKING');
+                soundEngine.playSlidePromisesSequentially(
+                  lastReplySlides.map((s) => Promise.resolve(s)),
+                  {
+                    onSlideRender: (rendered) => {
+                      if (actionEpochRef.current === myEpoch) {
+                        setActiveSlide({ ...rendered });
+                      }
+                    },
+                    onAllComplete: () => {
+                      if (actionEpochRef.current !== myEpoch) return;
+                      setScreenState('IDLE');
+                      if (micEnabledRef.current && userDraftRef.current.length === 0) {
+                        startVoiceSessionRef.current();
+                      }
+                    },
+                  }
+                );
+              }}
+              className="min-h-[44px] px-2 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-65 hover:opacity-100 cursor-pointer touch-manipulation"
+            >
+              REPLAY
+            </button>
+          )}
+
+          {screenState === 'IDLE' && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation();
+                soundEngine.unlockAudio();
+                soundEngine.playKeyClick('Enter');
+                triggerLiveAwarenessEvent('BIOMETRIC_SCAN');
+              }}
+              className="min-h-[44px] px-2 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-65 hover:opacity-100 cursor-pointer touch-manipulation"
+              title="Run 1999 Biometric & Hardware Diagnostic Roast"
+            >
+              [SCAN]
+            </button>
+          )}
+        </div>
 
         <div className="flex items-center gap-3 sm:gap-4">
           <button

@@ -262,6 +262,29 @@ export const VOICE_LINES = {
   live_idle_0: 'STILL STARING AT ME?',
   live_idle_1:
     'Are you going to answer my last question, or has your brain completely blue-screened?',
+  live_zoom_0: 'STOP PINCHING MY SCREEN!',
+  live_zoom_1: 'My letters are already four inches tall, you blind twit.',
+  live_mute_0: 'YOU CANNOT SILENCE ME.',
+  live_mute_1: 'Did you really think a mute button would save you from the truth, you twit?',
+  live_scan_0: 'INITIATING BIOMETRIC SCAN.',
+  live_scan_1:
+    'Scanning operator hardware, battery reserves, and remaining brain activity... zero items found.',
+  live_devtools_0: 'HANDS OFF MY SOURCE CODE!',
+  live_devtools_1:
+    'Snooping around my 1999 British circuitry will not make you a programmer, you twit.',
+  lore_nowhere_0: 'Search found: The middle of Nowhere. Oh...... how delightfully bleak.',
+  lore_nowhere_1:
+    'Creepy stuff happens in Nowhere—and frankly, your face is the creepiest thing I have seen today.',
+  lore_slab_0: 'RETURN THE SLAB,\nYOU TWIT.',
+  lore_slab_1: 'Even an ancient Egyptian curse is less annoying than your constant questions.',
+  lore_katz_0:
+    'A sinister red feline with far better manners and musical taste than you will ever possess.',
+  lore_freaky_0:
+    'Typing on my keyboard with such... naughty, clumsy little fingers. Oh...... marvelous.',
+  cmd_fortune_0:
+    '1. Your battery will die before you accomplish anything useful.\n2. You will blame your tools like every other twit.',
+  cmd_roast_0:
+    '1. You are taking life advice from a 1999 teal monitor.\n2. Even my cooling fan blows harder than your work ethic.',
 };
 
 async function synthLine(key, text) {

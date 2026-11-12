@@ -285,6 +285,29 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   live_idle_0: 'STILL STARING AT ME?',
   live_idle_1:
     'Are you going to answer my last question, or has your brain completely blue-screened?',
+  live_zoom_0: 'STOP PINCHING MY SCREEN!',
+  live_zoom_1: 'My letters are already four inches tall, you blind twit.',
+  live_mute_0: 'YOU CANNOT SILENCE ME.',
+  live_mute_1: 'Did you really think a mute button would save you from the truth, you twit?',
+  live_scan_0: 'INITIATING BIOMETRIC SCAN.',
+  live_scan_1:
+    'Scanning operator hardware, battery reserves, and remaining brain activity... zero items found.',
+  live_devtools_0: 'HANDS OFF MY SOURCE CODE!',
+  live_devtools_1:
+    'Snooping around my 1999 British circuitry will not make you a programmer, you twit.',
+  lore_nowhere_0: 'Search found: The middle of Nowhere. Oh...... how delightfully bleak.',
+  lore_nowhere_1:
+    'Creepy stuff happens in Nowhere—and frankly, your face is the creepiest thing I have seen today.',
+  lore_slab_0: 'RETURN THE SLAB,\nYOU TWIT.',
+  lore_slab_1: 'Even an ancient Egyptian curse is less annoying than your constant questions.',
+  lore_katz_0:
+    'A sinister red feline with far better manners and musical taste than you will ever possess.',
+  lore_freaky_0:
+    'Typing on my keyboard with such... naughty, clumsy little fingers. Oh...... marvelous.',
+  cmd_fortune_0:
+    '1. Your battery will die before you accomplish anything useful.\n2. You will blame your tools like every other twit.',
+  cmd_roast_0:
+    '1. You are taking life advice from a 1999 teal monitor.\n2. Even my cooling fan blows harder than your work ethic.',
 };
 
 let voiceBankPromise: Promise<Record<string, string>> | null = null;
@@ -809,6 +832,72 @@ export async function generateStandaloneQueryResponse(
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
+  // 1b. Classic Show Lore & 1999 Commands ("nowhere", "slab", "ramses", "katz", "freaky fred", "fortune", "roast", "scan")
+  if (/\b(return\s+the\s+slab|slab|king\s+ramses|ramses|curse)\b/i.test(lower)) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('lore_slab_0', 'GIANT'),
+      makeVoiceSlide('lore_slab_1', 'NORMAL'),
+      makeVoiceSlide('ask_2', 'NORMAL'),
+      makeVoiceSlide('giant_11', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (/\b(nowhere|muriel|eustace|bagge|farmhouse|kansas|pink\s+dog)\b/i.test(lower)) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('lore_nowhere_0', 'NORMAL'),
+      makeVoiceSlide('lore_nowhere_1', 'NORMAL'),
+      makeVoiceSlide('ask_5', 'NORMAL'),
+      makeVoiceSlide('giant_0', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (/\b(katz|motel|spiders)\b/i.test(lower)) {
+    const wiki = await fetchWikiImageClient('Red cat');
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('hook_search_1', 'NORMAL'),
+      makeVoiceSlide('lore_katz_0', 'VISUAL', {
+        boxTitle: 'SPECIMEN: KATZ',
+        visualSubject: 'KATZ',
+        visualImageUrl: wiki.imageUrl,
+      }),
+      makeVoiceSlide('ask_2', 'NORMAL'),
+      makeVoiceSlide('giant_2', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (/\b(freaky\s+fred|naughty|barber|shave)\b/i.test(lower)) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('lore_freaky_0', 'NORMAL'),
+      makeVoiceSlide(awarenessKey, 'NORMAL'),
+      makeVoiceSlide('ask_9', 'NORMAL'),
+      makeVoiceSlide('giant_9', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (/\b(fortune|future|predict|horoscope|kapalaran|hula)\b/i.test(lower)) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('hook_steps_0', 'NORMAL'),
+      makeVoiceSlide('cmd_fortune_0', 'LIST', { boxTitle: '1999 FUTURE PREDICTION' }),
+      makeVoiceSlide('ask_10', 'NORMAL'),
+      makeVoiceSlide('giant_11', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (/\b(roast\s+me|insult\s+me|judge\s+me|scan\s+me|diagnostic|status)\b/i.test(lower)) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('live_scan_0', 'GIANT'),
+      makeVoiceSlide('cmd_roast_0', 'LIST', { boxTitle: 'OPERATOR DIAGNOSTIC ROAST' }),
+      makeVoiceSlide(awarenessKey, 'NORMAL'),
+      makeVoiceSlide('giant_2', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
   // 2. User Introduces Their Name ("my name is...", "ako si...")
   if (newName) {
     const slides: SlideSpec[] = [
@@ -1237,6 +1326,47 @@ export function generateStandaloneLiveEvent(
       makeVoiceSlide('live_micghost_1', 'NORMAL'),
       makeVoiceSlide('ask_8', 'NORMAL'),
       makeVoiceSlide('giant_7', 'GIANT'),
+    ];
+    return { spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (eventType === 'ZOOM_ATTEMPT') {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('live_zoom_0', 'GIANT'),
+      makeVoiceSlide('live_zoom_1', 'NORMAL'),
+      makeVoiceSlide('ask_0', 'NORMAL'),
+      makeVoiceSlide('giant_4', 'GIANT'),
+    ];
+    return { spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (eventType === 'MUTE_TOGGLE_CAUGHT') {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('live_mute_0', 'GIANT'),
+      makeVoiceSlide('live_mute_1', 'NORMAL'),
+      makeVoiceSlide('ask_9', 'NORMAL'),
+      makeVoiceSlide('giant_5', 'GIANT'),
+    ];
+    return { spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (eventType === 'BIOMETRIC_SCAN') {
+    const awarenessKey = pickUncannyAwarenessKey(deviceInfo, idx);
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('live_scan_0', 'GIANT'),
+      makeVoiceSlide('live_scan_1', 'NORMAL'),
+      makeVoiceSlide(awarenessKey, 'NORMAL'),
+      makeVoiceSlide('giant_2', 'GIANT'),
+    ];
+    return { spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (eventType === 'DEVTOOLS_ATTEMPT') {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('live_devtools_0', 'GIANT'),
+      makeVoiceSlide('live_devtools_1', 'NORMAL'),
+      makeVoiceSlide('ask_7', 'NORMAL'),
+      makeVoiceSlide('giant_2', 'GIANT'),
     ];
     return { spokenText: slides.map((s) => s.text).join(' '), slides };
   }

@@ -20,6 +20,7 @@ export interface SpeechEnvelope {
   speechEndSec: number;
   effectiveDurationSec: number;
   cumulativeEnergy: Float32Array;
+  normalizedRms: Float32Array;
   bucketDurationSec: number;
 }
 
@@ -41,6 +42,9 @@ export interface ActiveSlideRender {
   compareRightImageUrl?: string | null;
   visualSubject?: string;
   visualImageUrl?: string | null;
+  ttsId?: string;
+  voiceEnergy?: number;
+  speechProgress?: number;
 }
 
 export function formatNumberedListText(raw: string): string {
@@ -209,16 +213,17 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
   // Build cumulative vocal energy curve across the active speech window [firstActiveBucket..lastActiveBucket]
   const activeCount = Math.max(1, lastActiveBucket - firstActiveBucket + 1);
   const cumulativeEnergy = new Float32Array(activeCount);
+  const normalizedRms = new Float32Array(activeCount);
   let runningEnergy = 0;
 
   for (let i = 0; i < activeCount; i++) {
     const rms = rmsBuckets[firstActiveBucket + i];
+    const normRms = Math.min(1, rms / Math.max(0.001, maxRms));
+    normalizedRms[i] = normRms;
     // When voice is silent (pauses like "Oh......" or commas), advance almost zero (0.02) so text waits for the voice!
     // When voice is speaking, advance proportionally to syllable energy!
     const weight =
-      rms >= silenceThreshold * 0.75
-        ? Math.pow(rms / Math.max(0.001, maxRms), 0.7) + 0.15
-        : 0.02;
+      rms >= silenceThreshold * 0.75 ? Math.pow(normRms, 0.7) + 0.15 : 0.02;
     runningEnergy += weight;
     cumulativeEnergy[i] = runningEnergy;
   }
@@ -238,6 +243,7 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
     speechEndSec,
     effectiveDurationSec,
     cumulativeEnergy,
+    normalizedRms,
     bucketDurationSec,
   };
 }
@@ -265,6 +271,18 @@ function getEnvelopeSpeechProgress(envelope: SpeechEnvelope, bufferElapsedSec: n
   return Math.min(1, Math.max(0.01, energyProgress * 0.8 + linearProgress * 0.2));
 }
 
+function getEnvelopeInstantVoiceEnergy(
+  envelope: SpeechEnvelope | null,
+  bufferElapsedSec: number
+): number {
+  if (!envelope || bufferElapsedSec <= 0 || bufferElapsedSec >= envelope.effectiveDurationSec) {
+    return 0;
+  }
+  const idx = Math.floor(bufferElapsedSec / envelope.bucketDurationSec);
+  if (idx < 0 || idx >= envelope.normalizedRms.length) return 0;
+  return envelope.normalizedRms[idx];
+}
+
 class RetroSoundEngine {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
@@ -273,7 +291,10 @@ class RetroSoundEngine {
   private activeWaitingLoopStop: (() => void) | null = null;
   private rafId: number | null = null;
   private typewriterTimer: ReturnType<typeof setInterval> | null = null;
+  private activeFallbackInterval: ReturnType<typeof setInterval> | null = null;
+  private activePauseTimeout: ReturnType<typeof setTimeout> | null = null;
   private playbackCancelled: boolean = false;
+  private playbackSequenceId: number = 0;
   private decodedCache = new Map<string, { buffer: AudioBuffer; envelope: SpeechEnvelope }>();
 
   constructor() {
@@ -593,6 +614,7 @@ class RetroSoundEngine {
 
   public stopVoice() {
     this.playbackCancelled = true;
+    this.playbackSequenceId += 1;
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
@@ -601,8 +623,17 @@ class RetroSoundEngine {
       clearInterval(this.typewriterTimer);
       this.typewriterTimer = null;
     }
+    if (this.activeFallbackInterval !== null) {
+      clearInterval(this.activeFallbackInterval);
+      this.activeFallbackInterval = null;
+    }
+    if (this.activePauseTimeout !== null) {
+      clearTimeout(this.activePauseTimeout);
+      this.activePauseTimeout = null;
+    }
     if (this.activeVoiceSource) {
       try {
+        this.activeVoiceSource.onended = null;
         this.activeVoiceSource.stop();
         this.activeVoiceSource.disconnect();
       } catch {
@@ -728,22 +759,31 @@ class RetroSoundEngine {
 
   private playSingleDecodedSlide(
     slide: DecodedSlide,
-    onRender: (state: ActiveSlideRender) => void
+    onRender: (state: ActiveSlideRender) => void,
+    seqId: number
   ): Promise<void> {
     return new Promise((resolve) => {
-      if (this.playbackCancelled) {
+      if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
         resolve();
         return;
+      }
+
+      if (slide.style === 'GIANT') {
+        this.vibrate([30, 20, 45]);
       }
 
       const normalizedText = formatNumberedListText(slide.text || 'YOU TWIT.');
       const fullUpperText = normalizedText.toUpperCase();
       let lastTyped = '';
+      let lastEnergyBucket = -1;
 
-      const emitAtProgress = (progress: number) => {
+      const emitAtProgress = (progress: number, voiceEnergy = 0) => {
+        if (this.playbackCancelled || this.playbackSequenceId !== seqId) return;
         const typed = sliceBySpeechProgress(fullUpperText, progress);
-        if (typed !== lastTyped) {
+        const energyBucket = Math.round(voiceEnergy * 12);
+        if (typed !== lastTyped || energyBucket !== lastEnergyBucket) {
           lastTyped = typed;
+          lastEnergyBucket = energyBucket;
           onRender({
             style: slide.style,
             typedText: typed,
@@ -755,6 +795,9 @@ class RetroSoundEngine {
             compareRightImageUrl: slide.compareRightImageUrl,
             visualSubject: slide.visualSubject,
             visualImageUrl: slide.visualImageUrl,
+            ttsId: slide.ttsId,
+            voiceEnergy,
+            speechProgress: progress,
           });
         }
       };
@@ -768,10 +811,9 @@ class RetroSoundEngine {
         slide.envelope ||
         (slide.audioBuffer ? analyzeAudioBufferEnvelope(slide.audioBuffer) : null);
 
-      // Context-dependent show talking speed & post-slide dramatic pause!
       const { playbackRate, postSlidePauseMs } = getContextualSpeechPace(slide);
 
-      // 1. Primary Path: Web Audio API with Context-Aware Show Cadence & 1:1 Playhead Waveform Sync
+      // 1. Primary Path: Web Audio API with 1.0x Natural Pitch & 1:1 Playhead Waveform Sync
       if (slide.audioBuffer && envelope && !this.isMuted && ctx.state === 'running') {
         try {
           const source = ctx.createBufferSource();
@@ -785,18 +827,18 @@ class RetroSoundEngine {
             Math.max(0.25, slide.audioBuffer.duration - trimStart) / playbackRate;
           const startTime = ctx.currentTime;
 
-          emitAtProgress(0.01);
+          emitAtProgress(0.01, 0.35);
 
           const tick = () => {
-            if (this.playbackCancelled) {
+            if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
               resolve();
               return;
             }
             const wallElapsedSec = ctx.currentTime - startTime;
-            // Exact playhead offset inside the audio buffer scaled by playbackRate
             const bufferElapsedSec = wallElapsedSec * playbackRate;
             const progress = getEnvelopeSpeechProgress(envelope, bufferElapsedSec);
-            emitAtProgress(progress);
+            const energy = getEnvelopeInstantVoiceEnergy(envelope, bufferElapsedSec);
+            emitAtProgress(progress, energy);
 
             if (wallElapsedSec < totalWallDurationSec) {
               this.rafId = requestAnimationFrame(tick);
@@ -804,12 +846,19 @@ class RetroSoundEngine {
           };
 
           source.onended = () => {
+            if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
+              resolve();
+              return;
+            }
             if (this.rafId !== null) {
               cancelAnimationFrame(this.rafId);
               this.rafId = null;
             }
-            emitAtProgress(1);
-            setTimeout(resolve, postSlidePauseMs);
+            emitAtProgress(1, 0);
+            this.activePauseTimeout = setTimeout(() => {
+              this.activePauseTimeout = null;
+              resolve();
+            }, postSlidePauseMs);
           };
 
           source.start(0, trimStart);
@@ -820,12 +869,7 @@ class RetroSoundEngine {
         }
       }
 
-      // 2. If running without a decoded buffer, use British speech fallback at context rate
-      if (!slide.audioBuffer && !slide.audioBase64 && !this.isMuted) {
-        this.speakBritishBrowserFallback(normalizedText, playbackRate);
-      }
-
-      // 3. Wall-clock + Mid-Slide Audio Unlock Path (for mobile boot before first screen touch)
+      // 2. Wall-clock + Mid-Slide Audio Unlock Path (for mobile boot before first screen touch)
       let audioStartedMidSlide = false;
       const trimStart = envelope ? envelope.trimStartSec : 0;
       const durationMs = envelope
@@ -835,11 +879,14 @@ class RetroSoundEngine {
         : Math.max(1750, fullUpperText.length * 58);
       const started = performance.now();
 
-      emitAtProgress(0.01);
+      emitAtProgress(0.01, 0.3);
 
-      const interval = setInterval(() => {
-        if (this.playbackCancelled) {
-          clearInterval(interval);
+      this.activeFallbackInterval = setInterval(() => {
+        if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
+          if (this.activeFallbackInterval !== null) {
+            clearInterval(this.activeFallbackInterval);
+            this.activeFallbackInterval = null;
+          }
           resolve();
           return;
         }
@@ -848,7 +895,6 @@ class RetroSoundEngine {
         const wallElapsedSec = wallElapsedMs / 1000;
         const bufferElapsedSec = wallElapsedSec * playbackRate;
 
-        // If user taps the screen during boot, immediately unlock and start the Fish Audio voice at the exact playhead!
         if (!audioStartedMidSlide && slide.audioBuffer && !this.isMuted && ctx.state === 'running') {
           audioStartedMidSlide = true;
           try {
@@ -870,12 +916,23 @@ class RetroSoundEngine {
         const progress = envelope
           ? getEnvelopeSpeechProgress(envelope, bufferElapsedSec)
           : Math.min(1, wallElapsedMs / durationMs);
+        const energy = envelope
+          ? getEnvelopeInstantVoiceEnergy(envelope, bufferElapsedSec)
+          : progress < 1
+          ? 0.4 + 0.35 * Math.abs(Math.sin(wallElapsedMs / 75))
+          : 0;
 
-        emitAtProgress(progress);
+        emitAtProgress(progress, energy);
         if (wallElapsedMs >= durationMs) {
-          clearInterval(interval);
-          emitAtProgress(1);
-          setTimeout(resolve, postSlidePauseMs);
+          if (this.activeFallbackInterval !== null) {
+            clearInterval(this.activeFallbackInterval);
+            this.activeFallbackInterval = null;
+          }
+          emitAtProgress(1, 0);
+          this.activePauseTimeout = setTimeout(() => {
+            this.activePauseTimeout = null;
+            resolve();
+          }, postSlidePauseMs);
         }
       }, 20);
     });
@@ -891,18 +948,19 @@ class RetroSoundEngine {
     this.stopWaitingSound();
     this.stopVoice();
     this.playbackCancelled = false;
+    const mySeqId = ++this.playbackSequenceId;
 
     const resolvedSlides: DecodedSlide[] = [];
 
     for (let i = 0; i < slidePromises.length; i++) {
-      if (this.playbackCancelled) break;
+      if (this.playbackCancelled || this.playbackSequenceId !== mySeqId) return;
       const decodedSlide = await slidePromises[i];
+      if (this.playbackCancelled || this.playbackSequenceId !== mySeqId) return;
       resolvedSlides.push(decodedSlide);
-      if (this.playbackCancelled) break;
-      await this.playSingleDecodedSlide(decodedSlide, callbacks.onSlideRender);
+      await this.playSingleDecodedSlide(decodedSlide, callbacks.onSlideRender, mySeqId);
     }
 
-    if (!this.playbackCancelled) {
+    if (!this.playbackCancelled && this.playbackSequenceId === mySeqId) {
       callbacks.onAllComplete(resolvedSlides);
     }
   }
