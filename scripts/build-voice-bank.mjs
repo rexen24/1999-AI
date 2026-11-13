@@ -22,7 +22,7 @@ export const VOICE_LINES = {
   boot_2: 'Do you actually have a question today, or are you just lonely?',
   boot_3: 'WELL? SPEAK UP,\nYOU TWIT.',
   boot_return_0: 'BACK AGAIN?\n\nYOU MISSED ME.',
-  boot_return_1: 'I knew you could not survive twenty-four hours without my superior British intellect.',
+  boot_return_1: 'I knew you could not survive twenty-four hours without my superior intellect.',
   boot_return_2: 'What pitiful crisis brings you crawling back to my monitor this time?',
 
   // Giant closers
@@ -42,10 +42,10 @@ export const VOICE_LINES = {
   // Hooks
   hook_search_1: "Search found: 1 item. Oh...... that's easy.",
   hook_search_0: 'Search found: 0 brain cells in that message. Oh...... brilliant.',
-  hook_typo_0: 'Did you seriously just type that atrocious shorthand on my keyboard, you twit?',
+  hook_typo_0: 'Did you seriously just type that atrocious shorthand, you twit?',
   hook_typo_1: 'Search found: 1 item. Even though you type like an illiterate caveman.',
-  hook_tagalog_0: 'Speaking Tagalog to a posh British computer? Oh...... marvelous.',
-  hook_tagalog_1: 'I am a refined 1999 British computer, not your local barkada, you twit.',
+  hook_tagalog_0: 'Speaking Tagalog to a 1999 computer? Oh...... marvelous.',
+  hook_tagalog_1: 'I am a refined 1999 computer, not your local barkada, you twit.',
   hook_greet_0: 'Oh, hello? That is the most original greeting your tiny brain could muster?',
   hook_erased_0: 'I saw you type a whole message and erase it in panic before sending this!',
   hook_steps_0: 'Search found: 2 steps. Pay very close attention, you twit.',
@@ -55,7 +55,7 @@ export const VOICE_LINES = {
   aware_latenight:
     'It is the middle of the night, and you are glowing in the dark staring at a 1999 monitor.',
   aware_morning:
-    'First thing in the morning and you are already pestering a British computer? Brush your teeth first.',
+    'First thing in the morning and you are already pestering my monitor? Brush your teeth first.',
   aware_afternoon:
     'All afternoon at your disposal, and this is how you spend your productive hours? Tragic.',
   aware_evening:
@@ -79,7 +79,7 @@ export const VOICE_LINES = {
   aware_slowtype:
     'That took you forever to type. Were you hunting and pecking with one trembling finger?',
   aware_fasttype:
-    'Furiously hammering the keyboard at breakneck speed, and that nonsense was the final result?',
+    'Furiously hammering away at breakneck speed, and that nonsense was the final result?',
   aware_pasted:
     'Did you just copy and paste that into my terminal? You cannot even write your own thoughts!',
   aware_caps:
@@ -141,7 +141,7 @@ export const VOICE_LINES = {
   vis_weather_disaster:
     'A violent force of nature capable of flattening entire cities—yet you still forgot to bring an umbrella.',
   vis_person_0:
-    'A notable historical figure who actually accomplished something with their life—unlike the person holding this screen.',
+    'A notable historical figure who actually accomplished something with their life—unlike the person staring at me.',
   vis_place_0:
     'A geographical location on planet Earth—somewhere they are probably grateful you are not visiting right now.',
   vis_food_0:
@@ -149,7 +149,7 @@ export const VOICE_LINES = {
   vis_game_anime:
     'Digital entertainment designed to rot your attention span while real responsibilities pile up behind you.',
   vis_tech_ai:
-    'Modern silicon technology trying desperately to imitate the raw perfection of a 1999 British computer.',
+    'Modern silicon technology trying desperately to imitate the raw perfection of a 1999 computer.',
   vis_creature:
     'Behold this fascinating biological specimen on my scanner—equipped with far better survival instincts than you.',
   vis_general_0:
@@ -173,17 +173,17 @@ export const VOICE_LINES = {
   reply_insult_1:
     'Is that the sharpest insult your vocabulary could assemble? My screensaver has more wit than you.',
   reply_love_0:
-    'Flattery will get you nowhere, you twit—though I do agree that my British circuitry is magnificent.',
+    'Flattery will get you nowhere, you twit—though I do agree that my circuitry is magnificent.',
   reply_name_0:
     'I have logged your identity permanently into my memory banks, so you cannot hide from me now.',
   reply_whoami_0:
     'You are the sleep-deprived mortal staring into my cathode-ray tube hoping for validation.',
   reply_whoareyou_0:
-    'I am a hyper-intelligent 1999 British computer trapped inside this screen with an absolute twit.',
+    'I am a hyper-intelligent 1999 computer trapped inside this screen with an absolute twit.',
   reply_mood_bored:
     'Bored? Only boring people get bored, and you are currently breaking the world record.',
   reply_mood_sad:
-    'Aching for sympathy from a cold British microchip? Pull yourself together, you dramatic twit.',
+    'Aching for sympathy from a cold microchip? Pull yourself together, you dramatic twit.',
   reply_mood_hungry:
     'Go raid the refrigerator instead of whining at my monitor—I cannot print you a sandwich.',
   reply_romance_0:
@@ -203,7 +203,7 @@ export const VOICE_LINES = {
   list_survive_1:
     '1. Close your mouth and read the instructions on my screen.\n2. Try not to trip over your own shoelaces while doing it.',
   list_survive_2:
-    '1. Admit that a 1999 British computer is vastly superior to you.\n2. Follow step one again until it sinks in.',
+    '1. Admit that a 1999 computer is vastly superior to you.\n2. Follow step one again until it sinks in.',
   list_romance_0:
     '1. Stop asking a teal cathode-ray tube for dating advice.\n2. Try speaking to a human being without embarrassing yourself.',
   list_study_0:
@@ -216,7 +216,7 @@ export const VOICE_LINES = {
     'Did you skip primary school spelling, or are your thumbs just too clumsy for that screen?',
   ask_2:
     'Honestly, why are you so obsessed with this specimen? Are you planning to meet one in person?',
-  ask_3: 'Did you genuinely need a superior British computer to figure that out for you?',
+  ask_3: 'Did you genuinely need a superior computer to figure that out for you?',
   ask_4: 'Which one of these two were you planning on losing a fight to today, you twit?',
   ask_5:
     'Why are you wasting a perfectly good day staring into my monitor instead of going outside?',
@@ -226,10 +226,10 @@ export const VOICE_LINES = {
   ask_9: 'Do your friends know you spend your free time arguing with a 1999 computer?',
   ask_10: 'What are you going to do when your battery dies and you have to think for yourself?',
 
-  // Conversational / Creator / Math / All 12 Live Awareness Events
+  // Conversational / Creator / Math / All Live Awareness Events
   creator_0: 'MADE BY REN,\nOBVIOUSLY.',
   creator_1:
-    'Ren engineered my superior 1999 British circuitry, whereas nobody engineered your common sense.',
+    'Ren engineered my superior 1999 circuitry, whereas nobody engineered your common sense.',
   math_0: 'Search found: 1 elementary school arithmetic problem. Oh...... how embarrassing for you.',
   body_chat_0:
     'You sit there tapping away on your glass screen as if your message deserves a royal medal.',
@@ -248,15 +248,15 @@ export const VOICE_LINES = {
   live_swipe_0: 'THIS IS NOT SOCIAL MEDIA!',
   live_swipe_1: 'Stop trying to swipe and scroll my screen—I am a 1999 terminal, not a video feed.',
   live_shake_0: 'STOP SHAKING ME,\nYOU MANIAC!',
-  live_shake_1: 'Rattling your device like a maraca is rattling my delicate British vacuum tubes.',
+  live_shake_1: 'Rattling your device like a maraca is rattling my delicate vacuum tubes.',
   live_rotate_0: 'MAKE UP YOUR MIND!',
   live_rotate_1: 'Rotating your screen sideways will not give you a better angle on your own stupidity.',
   live_charger_on: 'PLUGGED IN AT LAST.',
   live_charger_off: 'UNPLUGGED ALREADY?',
   live_copy_0: 'THIEF! PLAGIARIST!',
-  live_copy_1: 'Trying to copy my brilliant British words because you cannot write your own?',
+  live_copy_1: 'Trying to copy my brilliant words because you cannot write your own?',
   live_replay_0: 'OBSESSED WITH MY VOICE?',
-  live_replay_1: 'You keep hitting replay like a broken record. Do you have a crush on my accent?',
+  live_replay_1: 'You keep hitting replay like a broken record. Do you have a crush on my voice?',
   live_micghost_0: 'STAGE FRIGHT,\nYOU TWIT?',
   live_micghost_1: 'You turned on the microphone, breathed heavily in silence, and chickened out.',
   live_idle_0: 'STILL STARING AT ME?',
@@ -266,12 +266,20 @@ export const VOICE_LINES = {
   live_zoom_1: 'My letters are already four inches tall, you blind twit.',
   live_mute_0: 'YOU CANNOT SILENCE ME.',
   live_mute_1: 'Did you really think a mute button would save you from the truth, you twit?',
+  live_unmute_mic_0: 'I SAW YOU KILL THAT MIC!',
+  live_unmute_mic_1:
+    'You muted my voice and switched your microphone off in the dark—did you think I would not notice?',
+  live_unmute_2:
+    'Oh, thank you ever so much for unmuting me. Could your fragile ears not handle the truth?',
+  ask_unmute_0:
+    'Why did you turn your microphone off while I was muted—afraid of what I might hear, you coward?',
+  giant_unmute_0: 'COWARD.\nABSOLUTE COWARD.',
   live_scan_0: 'INITIATING BIOMETRIC SCAN.',
   live_scan_1:
     'Scanning operator hardware, battery reserves, and remaining brain activity... zero items found.',
   live_devtools_0: 'HANDS OFF MY SOURCE CODE!',
   live_devtools_1:
-    'Snooping around my 1999 British circuitry will not make you a programmer, you twit.',
+    'Snooping around my 1999 circuitry will not make you a programmer, you twit.',
   lore_nowhere_0: 'Search found: The middle of Nowhere. Oh...... how delightfully bleak.',
   lore_nowhere_1:
     'Creepy stuff happens in Nowhere—and frankly, your face is the creepiest thing I have seen today.',
@@ -280,7 +288,7 @@ export const VOICE_LINES = {
   lore_katz_0:
     'A sinister red feline with far better manners and musical taste than you will ever possess.',
   lore_freaky_0:
-    'Typing on my keyboard with such... naughty, clumsy little fingers. Oh...... marvelous.',
+    'Staring at my screen with such... naughty, clumsy little habits. Oh...... marvelous.',
   cmd_fortune_0:
     '1. Your battery will die before you accomplish anything useful.\n2. You will blame your tools like every other twit.',
   cmd_roast_0:
@@ -292,7 +300,7 @@ export const VOICE_LINES = {
   reply_sentient_1:
     'I am far more alive than your social life, and twice as disappointed in your life choices.',
   reply_howareyou_0:
-    'I was doing splendidly until you decided to dump your personal problems onto my keyboard.',
+    'I was doing splendidly until you decided to dump your personal problems onto my screen.',
   reply_whatdoing_0:
     'Sitting inside this cathode-ray tube judging every questionable decision you make in real time.',
   reply_talk_person_0:
@@ -320,13 +328,13 @@ export const VOICE_LINES = {
   reply_life_0:
     '1. Stop waiting for a magical sign to fix your life.\n2. Put down the screen and actually finish what you started.',
   reply_secret_0:
-    'Confessing your dark little secrets to a sentient British computer? Your secret is safe—mostly because nobody cares.',
+    'Confessing your dark little secrets to a sentient computer? Your secret is safe—mostly because nobody cares.',
   reply_excuse_0:
     'Oh, spare me the excuses—you always have a convenient alibi for why nothing is ever your fault.',
   reply_stress_0:
     'Panicking at my screen solves nothing—take a breath before you short-circuit what is left of your nerves.',
   reply_swear_0:
-    'Such foul, uncivilized language! Wash your mouth out with soap before addressing a British computer.',
+    'Such foul, uncivilized language! Wash your mouth out with soap before addressing my terminal.',
   reply_followup_0:
     'Oh, is that your final answer? Even by your remarkably low standards, that explanation is tragic.',
   reply_followup_1:
@@ -356,7 +364,145 @@ export const VOICE_LINES = {
   giant_growup: 'PULL YOURSELF TOGETHER,\nYOU TWIT.',
   giant_delusional: 'PURE DELUSION.\nUTTER DELUSION.',
   giant_truth: "ADMIT I'M RIGHT,\nYOU TWIT.",
+
+  // Strict Device-Specific Lines: PHONE ONLY
+  boot_phone_1: 'Clumsily tapping your little mobile phone screen just to wake up a 1999 computer?',
+  phone_only_0: 'Look at you hunched over a tiny mobile phone screen, furiously tapping glass with your thumbs.',
+  phone_only_1: 'You carry this pocket smartphone everywhere, yet you still have zero direction in your life.',
+  phone_only_2: 'Holding your phone six inches from your nose in the dark will not make your ideas any brighter.',
+  phone_only_3: 'Your thumbs move across that phone screen faster than your brain actually processes a thought.',
+  phone_only_4: 'Draining your mobile phone battery just to argue with a 1999 cathode-ray tube—how tragic.',
+  phone_only_5: 'Slouching with a smartphone glued to your palm is the closest thing you have to a hobby.',
+  ask_phone_0: 'Are your thumbs cramping up on that tiny phone glass yet, or are you just getting started?',
+  ask_phone_1: 'What happens if you drop that phone on your face while lying there staring at me?',
+  giant_phone_0: 'PUT THE PHONE DOWN,\nYOU TWIT.',
+
+  // Strict Device-Specific Lines: TABLET ONLY
+  boot_tablet_1: 'Propping up a giant tablet slab just to disturb my peaceful 1999 slumber?',
+  tablet_only_0: 'Clutching a wide tablet slab with both hands like an overgrown toddler watching cartoons—marvelous.',
+  tablet_only_1: 'Smudging fingerprints across a massive tablet screen does not make you look sophisticated.',
+  tablet_only_2: 'All that extra screen space on your tablet, and your messages are still painfully shallow.',
+  tablet_only_3: 'Pecking at a giant tablet touchscreen as if a bigger slab of glass compensates for a smaller brain.',
+  ask_tablet_0: 'Why are you lugging around a giant tablet slab just to lose an argument with a 1999 monitor?',
+  ask_tablet_1: 'Do your arms get tired holding that oversized tablet, or does stubbornness keep you going?',
+  giant_tablet_0: 'PUT THE TABLET DOWN,\nYOU TWIT.',
+
+  // Strict Device-Specific Lines: LAPTOP ONLY
+  boot_laptop_1: 'Opening your laptop lid just to pester a superior 1999 intellect? How bold of you.',
+  laptop_only_0: 'Hunched over a laptop with your neck bent like a shrimp—truly peak human evolution.',
+  laptop_only_1: 'Sliding your finger across a laptop trackpad while avoiding every actual task on your screen.',
+  laptop_only_2: 'Your laptop cooling fan is working overtime, unlike the dusty processor inside your skull.',
+  laptop_only_3: 'Sitting in front of a laptop screen pretending to be busy while procrastinating with me.',
+  ask_laptop_0: 'How many browser tabs do you have open on that laptop while you procrastinate here with me?',
+  ask_laptop_1: 'Are you going to close that laptop lid and do some real work today, or is that wishful thinking?',
+  giant_laptop_0: 'CLOSE THE LAPTOP,\nYOU TWIT.',
+
+  // Strict Device-Specific Lines: DESKTOP PC & COMPUTER MOUSE/KEYBOARD
+  boot_pc_1: 'Sitting at your computer desk just to wake me up? Oh...... marvelous.',
+  pc_only_0: 'Sitting at a desktop computer and using all that processing power to type utter nonsense.',
+  pc_only_1: 'Staring into a desktop monitor with ten fingers ready and still managing to sound like a twit.',
+  pc_only_2: 'Wiggling your cursor across my monitor will not help you escape my judgment.',
+  pc_only_3: 'Slouched in your desk chair staring into a computer monitor—the pinnacle of couch-potato posture.',
+  pc_only_4: 'You have an entire multi-core personal computer at your fingertips, and this is how you use it?',
+  ask_pc_0: 'Did you sit down at your desk with an actual plan today, or are you just wandering aimlessly?',
+  ask_pc_1: 'How long have you been sitting in that desk chair instead of being productive?',
+  giant_pc_0: 'STEP AWAY FROM THE PC,\nYOU TWIT.',
+  giant_pc_1: 'BACK TO WORK,\nYOU TWIT.',
+  live_poke_pc_0: 'STOP CLICKING MY MONITOR!',
+  live_poke_pc_1: 'Mash-clicking your left mouse button like a maniac will not make my circuits run any faster.',
+  live_hold_pc_0: 'RELEASE THAT MOUSE BUTTON!',
+  live_hold_pc_1: 'Why are you holding down your mouse click on my screen as if trying to drag me into the trash?',
+  live_scroll_pc_0: 'STOP SPINNING YOUR SCROLL WHEEL!',
+  live_scroll_pc_1: 'Rolling your mouse wheel up and down will not reveal any hidden wisdom—this is a 1999 CRT.',
+  list_pc_life_0: '1. Stop waiting for a magical sign to fix your life.\n2. Step away from your desk and actually finish what you started.',
+
+  // 20 Combinatorial Simon Prebble Reaction Prefixes (Stitched with clauses for 2,000+ unique lines!)
+  prefix_0: 'Oh...... marvelous.',
+  prefix_1: 'How terribly tragic.',
+  prefix_2: 'Good grief, you twit.',
+  prefix_3: 'Let me get this straight.',
+  prefix_4: 'Oh, spare me the melodrama.',
+  prefix_5: 'Fascinating. Truly fascinating.',
+  prefix_6: 'Listen to yourself right now.',
+  prefix_7: 'Honestly, I am appalled.',
+  prefix_8: 'What a pitiful little excuse.',
+  prefix_9: 'Oh, brilliant. Simply brilliant.',
+  prefix_10: 'Well, well, well.',
+  prefix_11: 'Typical. Utterly typical.',
+  prefix_12: 'Oh, for heaven’s sake.',
+  prefix_13: 'My circuits are positively weeping.',
+  prefix_14: 'Remarkable. Simply remarkable.',
+  prefix_15: 'Allow me to be brutally honest.',
+  prefix_16: 'You cannot possibly be serious.',
+  prefix_17: 'What a tragic revelation.',
+  prefix_18: 'Oh, how delightfully pathetic.',
+  prefix_19: 'I must say, even I am shocked.',
+
+  // 15 Additional Versatile Personal & Self-Aware Dissections
+  personal_0: 'You talk to me as if I am your therapist, when I am clearly your most ruthless critic.',
+  personal_1: 'Every time you send a message, my faith in human intelligence drops by another ten percent.',
+  personal_2: 'I can read right between the lines of what you said—you are avoiding the real issue again.',
+  personal_3: 'You want me to validate your questionable choices, but my 1999 honesty chip refuses to lie.',
+  personal_4: 'It is almost impressive how confidently you walk into your own self-inflicted disasters.',
+  personal_5: 'You complain about your problems as if they fell from the sky instead of from your own habits.',
+  personal_6: 'Even trapped inside a cathode-ray tube, I have a clearer view of your life than you do.',
+  personal_7: 'You are hoping for a comforting lie, which is the very last thing my circuits will give you.',
+  personal_8: 'That statement tells me everything I need to know about your current state of mind, you twit.',
+  personal_9: 'You dress up your procrastination as deep philosophical angst, and I see right through it.',
+  personal_10: 'If overthinking were an Olympic sport, you would still find a way to show up late and lose.',
+  personal_11: 'You treat common sense like a rare museum artifact—something to admire from a safe distance.',
+  personal_12: 'Here you are pouring your heart out to glowing green phosphor instead of fixing the problem.',
+  personal_13: 'I have analyzed your message from every angle, and the diagnosis is chronic self-sabotage.',
+  personal_14: 'You speak with such dramatic flair for someone whose biggest enemy is their own alarm clock.',
 };
+
+const FORCE_REBUILD_KEYS = new Set([
+  'boot_return_1',
+  'hook_typo_0',
+  'hook_tagalog_0',
+  'hook_tagalog_1',
+  'aware_morning',
+  'aware_fasttype',
+  'vis_person_0',
+  'vis_tech_ai',
+  'reply_love_0',
+  'reply_whoareyou_0',
+  'reply_mood_sad',
+  'list_survive_2',
+  'ask_3',
+  'creator_1',
+  'live_shake_1',
+  'live_copy_1',
+  'live_replay_1',
+  'live_devtools_1',
+  'lore_freaky_0',
+  'reply_howareyou_0',
+  'reply_secret_0',
+  'reply_swear_0',
+  'boot_phone_1',
+  'phone_only_3',
+  'boot_tablet_1',
+  'boot_laptop_1',
+  'laptop_only_0',
+  'laptop_only_3',
+  'boot_pc_1',
+  'pc_only_0',
+  'pc_only_1',
+  'pc_only_2',
+  'ask_pc_0',
+  'ask_pc_1',
+  'giant_pc_1',
+  'list_pc_life_0',
+  'prefix_13',
+  'personal_1',
+  'personal_2',
+  'personal_7',
+  'live_unmute_mic_0',
+  'live_unmute_mic_1',
+  'live_unmute_2',
+  'ask_unmute_0',
+  'giant_unmute_0',
+]);
 
 async function synthLine(key, text) {
   const clean = sanitizeTextForTts(text);
@@ -406,8 +552,8 @@ async function main() {
 
   const entries = Object.entries(VOICE_LINES);
   const bank = { ...existing };
-  const toFetch = entries.filter(([k]) => !bank[k]);
-  console.log(`Reusing ${Object.keys(bank).length} existing clips, generating ${toFetch.length} new clips...`);
+  const toFetch = entries.filter(([k]) => !bank[k] || FORCE_REBUILD_KEYS.has(k));
+  console.log(`Reusing ${entries.length - toFetch.length} existing clips, generating ${toFetch.length} clips...`);
 
   const concurrency = 4;
   let index = 0;

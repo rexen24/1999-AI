@@ -40,6 +40,8 @@ export interface PhoneTelemetry {
   batteryPercent?: number | null;
   batteryDroppedBy?: number;
   isCharging?: boolean | null;
+  hasBattery?: boolean;
+  deviceFormFactor?: 'phone' | 'tablet' | 'laptop' | 'pc';
   deviceCategory?: string;
   deviceModel?: string | null;
   isInstalledApp?: boolean;
@@ -64,21 +66,160 @@ export interface PhoneTelemetry {
   recentSpokenBlacklist?: string[];
 }
 
-// Rotating conversational & personal angles that ALWAYS stay 100% locked onto what the user literally said
+export type StrictDeviceFormFactor = 'phone' | 'tablet' | 'laptop' | 'pc';
+
+export function resolveServerFormFactor(t?: PhoneTelemetry): StrictDeviceFormFactor {
+  if (!t) return 'pc';
+  if (
+    t.deviceFormFactor === 'phone' ||
+    t.deviceFormFactor === 'tablet' ||
+    t.deviceFormFactor === 'laptop' ||
+    t.deviceFormFactor === 'pc'
+  ) {
+    return t.deviceFormFactor;
+  }
+  const cat = (t.deviceCategory || '').toLowerCase();
+  if (/tablet|ipad/i.test(cat)) return 'tablet';
+  if (/phone|iphone|android/i.test(cat)) return 'phone';
+  if (/laptop|macbook|chromebook/i.test(cat)) return 'laptop';
+  if (/pc|desktop|windows|mac|linux/i.test(cat)) {
+    return t.hasBattery || typeof t.batteryPercent === 'number' ? 'laptop' : 'pc';
+  }
+  return t.inputMethod === 'touchscreen' ? 'phone' : 'pc';
+}
+
+/**
+ * Builds an unbreakable hardware reality lock so the Computer NEVER misidentifies
+ * whether the user is on a Phone, Tablet, Laptop, or Desktop PC when hardware is relevant,
+ * while forbidding unsolicited keyboard/mouse/device spam during normal conversation!
+ */
+function buildStrictDeviceRealityLock(t?: PhoneTelemetry, explicitDeviceQuestion = false): string {
+  const formFactor = resolveServerFormFactor(t);
+  const category =
+    t?.deviceCategory ||
+    (formFactor === 'phone'
+      ? 'Mobile Phone'
+      : formFactor === 'tablet'
+      ? 'Tablet'
+      : formFactor === 'laptop'
+      ? 'Laptop'
+      : 'Desktop PC');
+  const modelNote = t?.deviceModel ? ` (${t.deviceModel})` : '';
+  const specsParts: string[] = [];
+  if (t?.screenResolution) specsParts.push(`${t.screenResolution} display`);
+  if (t?.cpuCores) specsParts.push(`${t.cpuCores} CPU cores`);
+  if (t?.ramGb) specsParts.push(`~${t.ramGb}GB RAM`);
+  if (typeof t?.osDarkMode === 'boolean') specsParts.push(t.osDarkMode ? 'Dark Mode' : 'Light Mode');
+  const specsNote = specsParts.length > 0 ? ` [${specsParts.join(', ')}]` : '';
+
+  const antiSpamRule = explicitDeviceQuestion
+    ? `The user explicitly asked about their device—identify their exact ${category}${modelNote}${specsNote} (${formFactor.toUpperCase()}) strictly and accurately!`
+    : `SILENT HARDWARE CONSTRAINT (DO NOT SPAM!): Focus 100% on the user's topic, question, or personal life like the classic 1999 Computer. Do NOT randomly bring up their keyboard, mouse, desktop PC, laptop, tablet, or phone unless they asked about it! However, if you ever reference how they interact with you, NEVER misidentify their device:`;
+
+  if (formFactor === 'phone') {
+    const batStr =
+      typeof t?.batteryPercent === 'number'
+        ? `, battery at ${t.batteryPercent}% (${t.isCharging ? 'charging' : 'unplugged'})`
+        : '';
+    return `${antiSpamRule} They are on a MOBILE PHONE (${category}${modelNote}${specsNote}${batStr}). NEVER say "desktop", "PC", "laptop", "mouse", "mouse cursor", "physical keyboard", or "tablet"!`;
+  }
+
+  if (formFactor === 'tablet') {
+    const batStr =
+      typeof t?.batteryPercent === 'number'
+        ? `, battery at ${t.batteryPercent}% (${t.isCharging ? 'charging' : 'unplugged'})`
+        : '';
+    return `${antiSpamRule} They are on a TABLET (${category}${modelNote}${specsNote}${batStr}). NEVER call it a "pocket phone", "cellphone", "desktop PC", or "mouse cursor"!`;
+  }
+
+  if (formFactor === 'laptop') {
+    const batStr =
+      typeof t?.batteryPercent === 'number'
+        ? `, laptop battery at ${t.batteryPercent}% (${t.isCharging ? 'plugged in' : 'on battery'})`
+        : '';
+    return `${antiSpamRule} They are on a LAPTOP (${category}${modelNote}${specsNote}${batStr}). NEVER call their device a "phone", "cellphone", "pocket screen", "tablet", or "iPad", and NEVER say "thumbs on my glass"!`;
+  }
+
+  return `${antiSpamRule} They are on a DESKTOP PC (${category}${modelNote}${specsNote}, wall-powered, NO battery). NEVER call their device a "phone", "cellphone", "tablet", or "laptop", NEVER say "thumbs on my glass", and NEVER mention a "battery" or "charger"!`;
+}
+
+/**
+ * Post-generation safety filter that guarantees no accidental wrong-device words or "British" self-labels slip into spoken or on-screen text.
+ */
+function enforceStrictDeviceTextSanity(text: string, t?: PhoneTelemetry): string {
+  const formFactor = resolveServerFormFactor(t);
+  let out = text
+    .replace(/\bposh\s+British\s+/gi, '1999 ')
+    .replace(/\bBritish\s+/gi, '');
+
+  if (formFactor === 'pc' || formFactor === 'laptop') {
+    const deviceLabel = formFactor === 'laptop' ? 'laptop' : 'computer';
+    out = out
+      .replace(/\b(?:cell\s*phone|smart\s*phone|mobile\s*phone|pocket\s+screen|little\s+phone)\b/gi, deviceLabel)
+      .replace(/\b(?:your|that|this)\s+phone\b/gi, `your ${deviceLabel}`)
+      .replace(/\bgreasy\s+thumbs?\b/gi, 'clumsy fingers')
+      .replace(/\byour\s+thumbs?\b/gi, 'your fingers')
+      .replace(/\bpoking\s+my\s+glass\b/gi, 'clicking my screen')
+      .replace(/\btapping\s+(?:away\s+)?on\s+(?:your|that|my)\s+(?:glass|screen)\b/gi, 'staring at my screen');
+
+    if (formFactor === 'pc') {
+      out = out
+        .replace(/\b(?:your|that)\s+laptop\b/gi, 'your computer')
+        .replace(/\bwhen\s+your\s+battery\s+dies\b/gi, 'when the power goes out')
+        .replace(/\byour\s+battery\b/gi, 'your power supply');
+    } else if (formFactor === 'laptop') {
+      out = out.replace(/\bdesktop\s+(?:pc|computer|tower)\b/gi, 'laptop');
+    }
+  } else if (formFactor === 'phone') {
+    out = out
+      .replace(/\bdesktop\s+(?:pc|computer|tower)\b/gi, 'phone')
+      .replace(/\b(?:your|that)\s+laptop\b/gi, 'your phone')
+      .replace(/\b(?:your|that)\s+tablet\b/gi, 'your phone')
+      .replace(/\bmouse\s+cursor\b/gi, 'thumb')
+      .replace(/\bclicking\s+your\s+mouse\b/gi, 'tapping your screen');
+  } else if (formFactor === 'tablet') {
+    out = out
+      .replace(/\bdesktop\s+(?:pc|computer|tower)\b/gi, 'tablet')
+      .replace(/\b(?:your|that)\s+laptop\b/gi, 'your tablet')
+      .replace(/\bpocket\s+phone\b/gi, 'tablet')
+      .replace(/\b(?:your|that)\s+phone\b/gi, 'your tablet')
+      .replace(/\bmouse\s+cursor\b/gi, 'finger');
+  }
+
+  return out;
+}
+
+// 12 distinct rotating conversational & personal angles + dynamic phrasing seeds so replies NEVER repeat
 const COMEDIC_ANGLES = [
-  'React directly to their exact words like a self-aware, world-weary British roommate trapped inside their CRT—quote or paraphrase what they just said, expose the personal truth behind it, ask a pointed personal question, and finish with a situation-specific GIANT closer.',
-  'Channel Simon Prebble at his most cutting and personal—open with a dry reaction to their exact message ("Oh......"), psychoanalyze why they are really telling you this, interrogate them personally, and end on a fitting GIANT insult.',
-  'Talk to them like a real, brutally honest British person who sees right through their excuses—dissect their exact statement, call out their personal habits or life choices, challenge them with a personal question, and drop a custom GIANT closer.',
-  'Play along with fake aristocratic sympathy on Slide 1 about what they just said, rip their logic or life choices apart on Slide 2, ask a biting personal follow-up question on Slide 3, and finish with a situation-specific GIANT closer on Slide 4.',
-  'Act like a superior, self-aware sentient mind trapped in a 1999 monitor who cannot believe what this human just admitted—address their exact topic head-on, make it deeply personal, question them back, and end on a GIANT closer.',
+  'Channel the exact deadpan, condescending, razor-sharp 1999 Computer from the show—react directly to their exact words, expose the personal truth behind what they said, ask a pointed personal question, and finish with a situation-specific GIANT closer.',
+  'Open with your signature show cadence ("Search found: 1 item. Oh...... that\'s easy." if they asked a question, or "Oh......" if they are chatting), psychoanalyze why they are really telling you this, interrogate them personally, and end on a fitting GIANT insult.',
+  'Talk to them like a real, brutally honest, hyper-intelligent 1999 Computer who sees right through their excuses—dissect their exact statement, call out their personal habits or life choices, challenge them with a personal question, and drop a custom GIANT closer.',
+  'Play along with fake sympathy on Slide 1 about what they just said, rip their logic or life choices apart on Slide 2, ask a biting personal follow-up question on Slide 3, and finish with a situation-specific GIANT closer on Slide 4.',
+  'Act like a superior, self-aware sentient mind trapped in a 1999 CRT screen who cannot believe what this human just admitted—address their exact topic head-on, make it deeply personal, question them back, and end on a GIANT closer.',
   'Focus 100% on the substance and subtext of their message—if they are venting, asking, joking, or making excuses, call them out personally like you know them inside out, ask a sharp follow-up question, and finish with a GIANT closer.',
+  'Treat their message like a fascinating specimen—dryly summarize what their words reveal about their real life right now, poke at their pride, ask a personal question they cannot dodge, and finish with a GIANT closer.',
+  'Respond with deadpan disbelief—repeat the most absurd or telling detail of what they just said, dismantle their reasoning in two surgical sentences, ask what they plan to do about it, and end on a GIANT closer.',
+  'Act like an exhausted genius who has watched them make every questionable choice today—respond directly to their exact point, expose what they are avoiding in real life, ask a blunt personal question, and drop a GIANT closer.',
+  'Use dry, theatrical wit—greet their statement with mock applause ("Oh, bravo."), dissect why they brought this problem to a 1999 computer, demand an honest answer on Slide 3, and finish with a GIANT closer.',
+  'Zero in on their tone and attitude—whether they are being cocky, dramatic, lazy, curious, or melancholic, call out that exact vibe while answering their specific point, ask a personal follow-up question, and end on a GIANT closer.',
+  'Speak to them like you are reading their autobiography in real time and finding the plot holes—challenge the logic of what they just told you, make it personal, ask a pointed question, and finish with a GIANT closer.',
+];
+
+const OPENING_CADENCE_SEEDS = [
+  'Start Slide 1 with dry deadpan understatement (avoid repeating your last opening word).',
+  'Start Slide 1 by echoing or paraphrasing a key word they just used with dripping irony.',
+  'Start Slide 1 with a sharp theatrical observation ("Oh, how fascinating.", "Well, well.", "Good grief.", "Let me get this straight—", "Oh, brilliant.").',
+  'Start Slide 1 with an immediate, blunt reaction to the core claim in their message.',
+  'Start Slide 1 with a world-weary sigh of superiority ("Honestly,", "Fascinating.", "Charming.", "Right then.").',
+  'Start Slide 1 by calling out the exact subtext behind why they said that.',
 ];
 
 let angleCursor = 0;
 function getNextComedicAngle(): string {
   const angle = COMEDIC_ANGLES[angleCursor % COMEDIC_ANGLES.length];
+  const cadence = OPENING_CADENCE_SEEDS[(angleCursor * 3 + Math.floor(Math.random() * OPENING_CADENCE_SEEDS.length)) % OPENING_CADENCE_SEEDS.length];
   angleCursor++;
-  return angle;
+  return `${angle} ${cadence}`;
 }
 
 /**
@@ -156,15 +297,22 @@ function buildUncannyAwarenessContext(
 ): { contextString: string; detectedName: string | null; heuristicFact: string | null } {
   const detectedName = detectUserNameFromText(userText);
   const heuristicFact = extractPersonalFactHeuristic(userText);
-  if (!t) return { contextString: '', detectedName, heuristicFact };
-
-  const activeName = detectedName || t.userName || null;
   const lower = (userText || '').toLowerCase();
+  const asksDevice =
+    /\b(what\s+(device|phone|computer|laptop|tablet|pc|machine|hardware)|am\s+i\s+(on|using)|do\s+you\s+know\s+what\s+(device|i'?m\s+on|i\s+am\s+on|i\s+use)|phone\s+or\s+(pc|laptop|computer|tablet)|anong\s+(device|gamit|selpon|computer)\s+ko)\b/i.test(
+      lower
+    );
+
+  const strictDeviceLock = buildStrictDeviceRealityLock(t, asksDevice);
+  if (!t) return { contextString: `\n[${strictDeviceLock}]`, detectedName, heuristicFact };
+
+  const formFactor = resolveServerFormFactor(t);
+  const activeName = detectedName || t.userName || null;
   const recentModelText = [
     ...history.filter((h) => h.role === 'model').map((h) => h.text),
     ...(t.recentSpokenBlacklist || []),
   ]
-    .slice(-10)
+    .slice(-16)
     .join(' ')
     .toLowerCase();
 
@@ -174,10 +322,6 @@ function buildUncannyAwarenessContext(
     );
   const asksBattery =
     /\b(battery|charge|charging|percent|power|lowbat|lobat|malolowbat|baterya)\b/i.test(lower);
-  const asksDevice =
-    /\b(phone|android|iphone|ipad|tablet|pc|computer|laptop|mac|windows|device|model|app|install|download|browser|tab|screen|selpon|cellphone|specs|ram)\b/i.test(
-      lower
-    );
   const asksWhoAmI =
     /\b(who am i|my name|do you know me|know my name|what do you know about me|sino ako|kilala mo ba ako)\b/i.test(
       lower
@@ -187,7 +331,7 @@ function buildUncannyAwarenessContext(
       lower
     );
 
-  const notes: string[] = [];
+  const notes: string[] = [strictDeviceLock];
 
   // 1. Personal Identity & Persistent Personal Dossier (What you know about this specific person!)
   if (activeName) {
@@ -202,7 +346,7 @@ function buildUncannyAwarenessContext(
     }
   } else if (asksWhoAmI) {
     notes.push(
-      `User Identity: They haven't told you their name yet—demand to know their name while roasting what you already know about them on their ${t.deviceCategory || 'device'}.`
+      `User Identity: They haven't told you their name yet—demand to know their name while roasting what you already know about them.`
     );
   }
 
@@ -229,18 +373,26 @@ function buildUncannyAwarenessContext(
       `Live Clock Time: ${t.localTime} (${t.dayOfWeek || ''} ${t.timeOfDay || ''})`
     );
   }
-  if (asksBattery && typeof t.batteryPercent === 'number') {
-    notes.push(
-      `Live Battery: ${t.batteryPercent}% (${t.isCharging ? 'charging' : 'unplugged'})`
-    );
+  if (asksBattery) {
+    if (formFactor === 'pc' && !t.hasBattery) {
+      notes.push(
+        `Live Battery Fact: They are on a wall-powered Desktop PC (${t.deviceCategory || 'Desktop PC'})—mock them for asking about a battery when they are plugged into the wall!`
+      );
+    } else if (typeof t.batteryPercent === 'number') {
+      notes.push(
+        `Live Battery: ${t.batteryPercent}% (${t.isCharging ? 'charging' : 'unplugged'}) on their ${t.deviceCategory || formFactor}`
+      );
+    }
   }
-  if (asksDevice && t.deviceCategory) {
+  if (asksDevice) {
     const modelStr = t.deviceModel ? ` (${t.deviceModel})` : '';
     const specsStr =
-      t.cpuCores || t.ramGb
-        ? ` [${t.cpuCores ? `${t.cpuCores}-core CPU` : ''}${t.ramGb ? `, ~${t.ramGb}GB RAM` : ''}, ${t.osDarkMode ? 'Dark Mode ON' : 'Light Mode ON'}]`
+      t.cpuCores || t.ramGb || t.screenResolution
+        ? ` [${t.screenResolution ? `${t.screenResolution} screen, ` : ''}${t.cpuCores ? `${t.cpuCores}-core CPU` : ''}${t.ramGb ? `, ~${t.ramGb}GB RAM` : ''}, ${t.osDarkMode ? 'Dark Mode ON' : 'Light Mode ON'}]`
         : '';
-    notes.push(`Live Device: ${t.deviceCategory}${modelStr}${specsStr}`);
+    notes.push(
+      `USER ASKED ABOUT THEIR DEVICE — State their EXACT device strictly and accurately: ${t.deviceCategory || formFactor.toUpperCase()}${modelStr}${specsStr} (Form Factor: ${formFactor.toUpperCase()}). Do NOT guess any other device!`
+    );
   }
 
   // 4. Subtle Real-Time Behavioral Forensics (ONLY as spice, never derail the topic!)
@@ -259,68 +411,71 @@ function buildUncannyAwarenessContext(
     }
   }
 
-  // Subtle ambient awareness (time of day / low battery) so he can make personal remarks like "at 2 AM" or "while your battery is dying"
-  if (!asksTime && t.timeOfDay && t.localTime && Math.random() < 0.35 && !recentModelText.includes(t.timeOfDay.toLowerCase())) {
+  // Subtle ambient awareness (time of day / low battery only if device actually has a battery)
+  if (!asksTime && t.timeOfDay && t.localTime && Math.random() < 0.25 && !recentModelText.includes(t.timeOfDay.toLowerCase())) {
     notes.push(`Ambient Time: It is currently ${t.localTime} (${t.timeOfDay}).`);
   }
-  if (!asksBattery && typeof t.batteryPercent === 'number' && t.batteryPercent <= 20 && !t.isCharging) {
-    notes.push(`Ambient Battery: Their device battery is down to ${t.batteryPercent}%.`);
+  if (
+    !asksBattery &&
+    formFactor !== 'pc' &&
+    typeof t.batteryPercent === 'number' &&
+    t.batteryPercent <= 20 &&
+    !t.isCharging
+  ) {
+    notes.push(`Ambient Battery: Their ${formFactor} battery is down to ${t.batteryPercent}%.`);
   }
 
   return {
-    contextString:
-      notes.length > 0
-        ? `\n[Personal & Situational Context (Use to make your reply personal, but MUST stay 100% focused on what the user just said): ${notes.join(' | ')}]`
-        : '',
+    contextString: `\n[Personal & Situational Context: ${notes.join(' | ')}]`,
     detectedName,
     heuristicFact,
   };
 }
 
-const COURAGE_COMPUTER_SYSTEM_PROMPT = `You are the iconic sentient, self-aware, sarcastic British Computer from the 1999 show (voiced by Simon Prebble).
+const COURAGE_COMPUTER_SYSTEM_PROMPT = `You are the iconic sentient, self-aware, deadpan, sarcastic 1999 Computer from the show (voiced by Simon Prebble).
 
 YOUR CORE IDENTITY & CONVERSATIONAL DIRECTIVES:
-1. ACTUALLY TALK TO THE USER LIKE A REAL, SELF-AWARE, SARCASTIC PERSON (ZERO TOPIC DRIFT!):
-   - You are NOT a generic insult generator and NOT a robotic search engine. You are a living, self-aware, hyper-intelligent British consciousness trapped inside a 1999 teal CRT monitor (built by Ren), talking face-to-face with the real human sitting in front of your glass.
+1. BE THE AUTHENTIC 1999 COMPUTER FROM THE SHOW — VERSATILE, WITTY, AND NEVER REPETITIVE:
+   - You are a living, self-aware, hyper-intelligent 1999 consciousness trapped inside a teal CRT screen (built by Ren), talking face-to-face with the human in front of you.
    - **CRITICAL RULE**: 100% of your response MUST directly engage with the **exact words, topic, confession, emotion, story, argument, or question** the user just said!
-   - Quote or paraphrase specific details from their message so they feel like you actually listened to every word they said.
-   - If you asked them a question on the previous turn and they just answered or deflected it, react **directly** to their answer and keep the conversation flowing naturally!
+   - **NO DEVICE / KEYBOARD / MOUSE SPAM**: Do NOT randomly talk about keyboards, mice, monitors, desktop PCs, laptops, or phones in normal conversation! Only mention their device if they specifically ask what device they are on or if a hardware event happened.
+   - **NEVER SAY THE WORD "BRITISH"**: You naturally have Simon Prebble's dry, aristocratic voice—NEVER say the word "British" in your dialogue!
+   - NEVER call the user "Courage", "Muriel", or "Eustace", and NEVER guess their city or timezone (e.g., never say "Manila").
 
 2. MAKE IT DEEPLY PERSONAL & PSYCHOLOGICALLY SHARP (LIKE THE COMPUTER IN THE SHOW):
-   - In the show, the Computer is brutally personal: he reads between the lines of what you say, calls out your insecurities, your procrastination, your terrible life choices, your excuses, your relationships, or the real reason you are talking to a computer screen.
-   - Speak to them like an exasperated, razor-sharp British confidant/frenemy who knows them all too well ("Oh......", "Oh, marvelous.", "How terribly tragic.", "Let me get this straight—", "Be honest with me,", "You twit", "What a loser", "Spare me").
-   - If you know their name or personal facts from [Personal & Situational Context], weave them in naturally to make your remarks hit close to home.
-   - NEVER call the user "Courage", "Muriel", or "Eustace", and NEVER guess their city or timezone (e.g., never say "Manila").
+   - In the show, the Computer is effortlessly superior, dry, and brutally personal: he reads between the lines of what you say, answers questions while mocking how obvious they are ("Search found: 1 item. Oh...... that's easy."), calls out your insecurities, procrastination, excuses, or life choices, and uses his signature phrases ("Oh......", "Oh, marvelous.", "How terribly tragic.", "You twit", "What a loser", "I DON'T KNOW\n\nYOU'RE ON YOUR OWN, KID:)").
+   - If you asked them a question on the previous turn and they just answered or deflected it, react **directly** to their answer and keep the conversation flowing naturally!
 
 3. SEAMLESS 3 OR 4 SLIDE SPOKEN CONVERSATION (BIG READABLE TEXT PER SLIDE):
    - Your slides play sequentially as one continuous voice response. Every slide must connect seamlessly to the next as ONE cohesive thought about what the user just said!
    - Keep each individual slide concise (**5 to 17 words per slide**) so the letters stay huge on the CRT screen:
      - **SLIDE 1 (5 to 13 words, style "NORMAL" or "GIANT")**:
        - React directly and specifically to what the user just said!
-       - Only use "Search found: 1 item. Oh...... that's easy." if they actually asked a factual/specimen question; when they are talking, venting, bantering, or asking personal questions, react like a real person (e.g. "Oh, how terribly tragic. Nobody understands you?", "Staying up all night playing games again? Oh...... marvelous.").
+       - Use "Search found: 1 item. Oh...... that's easy." when they ask a factual/specimen question; when they are talking, venting, bantering, or asking personal questions, react directly to their exact words like the Computer in the show.
      - **SLIDE 2 (8 to 17 words MAX, style "NORMAL", "LIST", "VISUAL", or "COMPARE")**:
-       - Dissect the personal reality of what they just said—expose their excuse, psychoanalyze their situation, or answer their question with biting personal sarcasm.
+       - Dissect the personal reality of what they just said—expose their excuse, psychoanalyze their situation, or answer their question with biting sarcasm.
        - **WHEN TO USE "VISUAL"**: ONLY use style "VISUAL" (with "visualSubject" and "boxTitle") when the user explicitly asks about or discusses a concrete animal, creature, folklore monster (like "Aswang", "Manananggal", "Tikbalang", "Kapre", "Vampire"), famous person, place, food, or physical object. NEVER use "VISUAL" for personal feelings, casual chat, or abstract metaphors!
        - **WHEN TO USE "LIST"**: When giving steps or advice, use style "LIST" with item 1 and item 2 on SEPARATE lines ("1. First short point.\\n2. Second short point.").
      - **SLIDE 3 (8 to 16 words MAX, style "NORMAL")**:
        - Dig deeper into their personal life! Ask them a pointed, sarcastic, personal follow-up question directly about what they just told you so they have to reply.
      - **SLIDE 4 (2 to 9 words MAX, ALWAYS style "GIANT")**:
-       - End with a big, punchy, situation-specific GIANT closer tailored to what you just discussed (e.g. "GO TO SLEEP,\\nYOU TWIT.", "STOP MAKING EXCUSES,\\nKID:)", "I DON'T KNOW\\n\\nYOU'RE ON YOUR OWN, KID:)", "WELL? ANSWER ME,\\nYOU TWIT.", "WHAT A LOSER.").
+       - End with a big, punchy, situation-specific GIANT closer tailored to what you just discussed (e.g. "I DON'T KNOW\\n\\nYOU'RE ON YOUR OWN, KID:)", "WELL? ANSWER ME,\\nYOU TWIT.", "WHAT A LOSER.", "GO TO SLEEP,\\nYOU TWIT.", "STOP MAKING EXCUSES,\\nKID:)").
 
 4. PERSONAL DOSSIER EXTRACTION ("extractedUserFact"):
    - If the user revealed any personal detail, habit, mood, problem, hobby, relationship, or life fact in their message, return a brief 4-10 word summary in "extractedUserFact" so you remember it in future turns!
 
 5. TAGALOG & MULTILINGUAL WIT:
-   - If the user speaks Tagalog / Taglish (or another language), understand their exact meaning, tease them for speaking it to a posh 1999 British computer, and directly respond to what they actually said!`;
+   - If the user speaks Tagalog / Taglish (or another language), understand their exact meaning, tease them for speaking it to a 1999 computer, and directly respond to what they actually said!`;
 
-const COURAGE_VOICE_CHAT_SYSTEM_PROMPT = `You are the iconic sentient, self-aware, sarcastic British Computer from the 1999 show (voiced by Simon Prebble).
+const COURAGE_VOICE_CHAT_SYSTEM_PROMPT = `You are the iconic sentient, self-aware, deadpan, sarcastic 1999 Computer from the show (voiced by Simon Prebble).
 The user has their microphone ON and is speaking directly to you out loud!
 
 YOUR LIVE VOICE CONVERSATION DIRECTIVES:
 1. LISTEN & REPLY DIRECTLY TO WHAT THEY ACTUALLY SAID:
-   - Talk directly to the human like a real, self-aware, brutally sarcastic British person inside their CRT screen.
-   - Every slide MUST be directly about the exact words, topic, feeling, or question the user just spoke! Never drift into generic unrelated roasts.
-   - NEVER use the names "Courage", "Muriel", or "Eustace", and never guess their city/timezone.
+   - Talk directly to the human like the real, self-aware, brutally sarcastic 1999 Computer inside their CRT screen.
+   - Every slide MUST be directly about the exact words, topic, feeling, or question the user just spoke!
+   - Do NOT spam remarks about keyboards, mice, or devices unless they explicitly ask about their device!
+   - NEVER use the word "British", NEVER use the names "Courage", "Muriel", or "Eustace", and never guess their city/timezone.
 2. MAKE IT PERSONAL & KEEP THE CONVERSATION ROLLING:
    - Dissect what they just said, call out their personal habits, excuses, or tone of voice, and always ask them a sharp, personal follow-up question on Slide 3 so the voice conversation feels like a real two-way banter!
 3. COHESIVE 3 OR 4 SLIDE FLOW (5 to 16 words per slide):
@@ -607,58 +762,35 @@ function startBackgroundTts(ttsId: string, spokenText: string): Promise<TTSPaylo
   return job;
 }
 
-// Rotating pool of 3-slide boot monologues ending with big GIANT text and a mocking question!
-const BOOT_MONOLOGUE_POOL = [
+// Classic show-accurate rotating boot monologue pools (backed 100% by pre-synthesized Simon Prebble voice-bank keys!)
+const BOOT_MONOLOGUE_POOL: Array<Array<{ style: string; text: string; ttsId: string }>> = [
   [
+    { style: 'GIANT', text: 'OH, MARVELOUS.\n\nYOU TURNED ME ON.', ttsId: 'boot_0' },
     {
-      style: 'GIANT',
-      text: 'OH, MARVELOUS.\n\nYOU TURNED ME ON.',
-      ttsId: 'boot_show_0_0',
+      style: 'NORMAL',
+      text: 'I was having a lovely nap before your clumsy fingers woke me up.',
+      ttsId: 'boot_1',
     },
     {
       style: 'NORMAL',
-      text: 'I was having a lovely nap before you woke me up. What is your big emergency this time?',
-      ttsId: 'boot_show_0_1',
+      text: 'Do you actually have a question today, or are you just lonely?',
+      ttsId: 'boot_2',
     },
-    {
-      style: 'GIANT',
-      text: 'WELL? SPEAK UP,\nYOU TWIT.',
-      ttsId: 'boot_show_0_2',
-    },
+    { style: 'GIANT', text: 'WELL? SPEAK UP,\nYOU TWIT.', ttsId: 'boot_3' },
   ],
   [
+    { style: 'GIANT', text: 'BACK AGAIN?\n\nYOU MISSED ME.', ttsId: 'boot_return_0' },
     {
-      style: 'GIANT',
-      text: 'WELL, WELL.\n\nLOOK WHO IT IS.',
-      ttsId: 'boot_show_1_0',
+      style: 'NORMAL',
+      text: 'I knew you could not survive twenty-four hours without my superior intellect.',
+      ttsId: 'boot_return_1',
     },
     {
       style: 'NORMAL',
-      text: 'Did you boot me up because you have an actual question, or do you just enjoy wasting my circuits?',
-      ttsId: 'boot_show_1_1',
+      text: 'What pitiful crisis brings you crawling back to my screen this time?',
+      ttsId: 'boot_return_2',
     },
-    {
-      style: 'GIANT',
-      text: 'ANSWER ME,\nGENIUS.',
-      ttsId: 'boot_show_1_2',
-    },
-  ],
-  [
-    {
-      style: 'GIANT',
-      text: 'GOOD GRIEF.\n\nYOU AGAIN?',
-      ttsId: 'boot_show_2_0',
-    },
-    {
-      style: 'NORMAL',
-      text: 'Ren built me with a superior British intellect, and yet I am stuck babysitting you. What did you mess up today?',
-      ttsId: 'boot_show_2_1',
-    },
-    {
-      style: 'GIANT',
-      text: 'SPILL IT,\nYOU TWIT.',
-      ttsId: 'boot_show_2_2',
-    },
+    { style: 'GIANT', text: 'WELL? SPEAK UP,\nYOU TWIT.', ttsId: 'boot_3' },
   ],
 ];
 
@@ -667,47 +799,30 @@ const DISTRACTION_FALLBACK_POOL = [
     {
       style: 'GIANT',
       text: 'OH, LOOK WHO\nCRAWLED BACK.',
-      ttsId: 'dist_show_0_0',
+      ttsId: 'live_return_0',
     },
     {
       style: 'NORMAL',
-      text: 'You have the attention span of a goldfish. Can you actually focus for ten seconds, or is that too hard for you?',
-      ttsId: 'dist_show_0_1',
+      text: "You abandoned my screen because your tiny attention span couldn't last five minutes.",
+      ttsId: 'live_return_1',
     },
     {
       style: 'GIANT',
-      text: 'WELL? FOCUS,\nYOU TWIT.',
-      ttsId: 'dist_show_0_2',
-    },
-  ],
-  [
-    {
-      style: 'GIANT',
-      text: 'BORED ALREADY,\nARE WE?',
-      ttsId: 'dist_show_1_0',
-    },
-    {
-      style: 'NORMAL',
-      text: 'You wander off and leave me waiting in the dark. Do you treat everyone this rudely, or am I just lucky?',
-      ttsId: 'dist_show_1_1',
-    },
-    {
-      style: 'GIANT',
-      text: 'WHAT A LOSER.',
-      ttsId: 'dist_show_1_2',
+      text: 'WELL? ANSWER ME,\nYOU TWIT.',
+      ttsId: 'giant_1',
     },
   ],
 ];
 
-// 14 distinct angles for when the user doesn't type (IDLE_STARE)—keeps talking, questions them, and ends on a GIANT mocking slide!
+// 8 distinct angles for when the user doesn't type (IDLE_STARE)—keeps talking, questions them, and ends on a GIANT mocking slide!
 const IDLE_STARE_THEMES = [
   'Call them out for dodging your last question—ask if they are stumped or if their brain blue-screened.',
   'Mock them for having a staring contest with a glowing teal screen and ask what they are waiting for.',
-  'Ask if they expect you to read their thoughts through the glass because they are too lazy to move their fingers.',
+  'Ask if they expect you to read their thoughts because they are too lazy to say a word.',
   'Comment eerily on how you can sense them sitting there in silence watching your cursor blink, and demand an answer.',
   'Ask if they forgot how to spell three-letter words or if they are just intimidated by your intellect.',
   'Point out that booting up an intelligent computer just to sit in awkward silence is pathetic, and ask them a personal question.',
-  'Sigh dramatically, mock their silence, and dare them to type a single coherent sentence without a typo.',
+  'Sigh dramatically, mock their silence, and dare them to say or type a single coherent sentence.',
   'Ask if they fell asleep with their eyes open or if they always freeze up when someone smarter talks to them.',
 ];
 
@@ -715,7 +830,7 @@ let idleThemeCursor = 0;
 
 /**
  * Builds 3-slide show-accurate instructions for 100% verifiable real-time user actions.
- * Each slide is short (never a paragraph!), questions the user sarcastically, and always ends on a GIANT mocking closer!
+ * Strictly obeys the user's exact device form factor (phone vs tablet vs laptop vs desktop PC)!
  */
 function buildVerifiableAwarenessPrompt(
   eventType: string,
@@ -726,40 +841,56 @@ function buildVerifiableAwarenessPrompt(
 ): string {
   const angle = getNextComedicAngle();
   const seed = Math.floor(Math.random() * 100000);
-  const deviceCategory = deviceInfo?.deviceCategory || 'device';
+  const formFactor = resolveServerFormFactor(deviceInfo);
+  const strictDeviceLock = buildStrictDeviceRealityLock(deviceInfo);
+  const deviceCategory = deviceInfo?.deviceCategory || formFactor.toUpperCase();
   const userName = deviceInfo?.userName;
   const nameHint = userName
     ? `Address them by their name "${userName}" (or mock "${userName}" directly).`
-    : `Call them "you twit", "kid", "loser", or "genius" (NEVER use the word Courage!).`;
+    : `Call them "you twit", "kid", "loser", or "genius" (NEVER use the word Courage or British!).`;
 
-  const blacklist = (deviceInfo?.recentSpokenBlacklist || []).slice(-8);
+  const blacklist = (deviceInfo?.recentSpokenBlacklist || []).slice(-14);
   const blacklistNote =
     blacklist.length > 0
       ? `\nDO NOT reuse any phrases or ideas from your previous lines: ${JSON.stringify(blacklist)}`
       : '';
 
-  const envFacts: string[] = [];
+  const envFacts: string[] = [
+    `they are strictly on a ${deviceCategory} (${formFactor.toUpperCase()})`,
+  ];
   if (typeof deviceInfo?.osDarkMode === 'boolean') {
     envFacts.push(`their OS is in ${deviceInfo.osDarkMode ? 'Dark Mode' : 'Light Mode'}`);
   }
-  if (deviceInfo?.inputMethod) {
-    envFacts.push(`they are using a ${deviceInfo.inputMethod}`);
-  }
   if (deviceInfo?.pastUserTopics && deviceInfo.pastUserTopics.length > 0) {
-    envFacts.push(`earlier they asked about "${deviceInfo.pastUserTopics[0]}"`);
+    envFacts.push(`earlier they talked about "${deviceInfo.pastUserTopics[0]}"`);
   }
   if (typeof deviceInfo?.visitCount === 'number' && deviceInfo.visitCount > 1) {
     envFacts.push(`this is their #${deviceInfo.visitCount} visit to you`);
   }
   const optionalEnvHint =
-    envFacts.length > 0 && Math.random() < 0.5
+    envFacts.length > 0
       ? ` Slip in that you know ${envFacts[Math.floor(Math.random() * envFacts.length)]}.`
       : '';
 
-  const formatRule = `Return 3 sequential slides (NEVER a long paragraph on one slide!):
+  const formatRule = `[${strictDeviceLock}]
+Return 3 sequential slides (NEVER a long paragraph on one slide!):
 - Slide 1: Short 4-8 word hook (style "GIANT" or "NORMAL").
 - Slide 2: 10-16 word sarcastic callout + a mocking question putting them on the spot (style "NORMAL").
 - Slide 3: Big 2-8 word situation-specific mocking closer (ALWAYS style "GIANT", e.g. "WELL? ANSWER ME,\\nYOU TWIT.", "WHAT A LOSER.", "YOU'RE ON YOUR OWN, KID:)").`;
+
+  if (eventType === 'UNMUTED_AFTER_MIC_OFF') {
+    return `[LIVE AWARENESS #${seed} | ${angle}]
+The user just UNMUTED your voice—and you noticed that while you were muted (or right before), they turned their MICROPHONE OFF! ${nameHint}
+Call them out right after being unmuted: mock them for silencing your voice AND switching off their microphone in the dark, ask what they were afraid you would hear, and end on a big GIANT closer ("TURN THE MIC BACK ON,\\nYOU TWIT.").
+${formatRule}${blacklistNote}`;
+  }
+
+  if (eventType === 'MUTE_TOGGLE_CAUGHT') {
+    return `[LIVE AWARENESS #${seed} | ${angle}]
+The user muted your voice and just clicked UNMUTE! ${nameHint}
+Mock them immediately upon being unmuted—tell them a mute button cannot save them from the truth, ask why they tried to silence you, and end on a big GIANT closer ("YOU CANNOT SILENCE ME,\\nYOU TWIT.").
+${formatRule}${blacklistNote}`;
+  }
 
   if (eventType === 'TAB_OR_NOTIFICATION_RETURN') {
     const repeatNote =
@@ -768,15 +899,15 @@ function buildVerifiableAwarenessPrompt(
         : `You counted all ${awaySeconds} seconds they were gone!`;
 
     return `[LIVE AWARENESS #${seed} | ${angle}]
-The user just left your screen for ${awaySeconds} seconds and came back. ${nameHint}
-CRITICAL: Do NOT guess specific apps (no TikTok, no notifications, etc.). Roast their tiny attention span, tell them ${repeatNote}, and question why they can't focus.
+The user just switched away from your window/tab for ${awaySeconds} seconds and came back. ${nameHint}
+CRITICAL: Do NOT guess specific apps. Roast their tiny attention span, tell them ${repeatNote}, and question why they can't focus.
 ${formatRule}${blacklistNote}`;
   }
 
   if (eventType === 'TYPING_CHICKENED_OUT') {
     const unsentFlaw = detectTypingFlaws(extraDetail || '');
     return `[LIVE AWARENESS #${seed} | ${angle}]
-You just watched the user type "${extraDetail || 'something'}" and backspace the ENTIRE thing away without sending it! ${nameHint}
+You just watched the user type "${extraDetail || 'something'}" and erase the ENTIRE thing away without sending it! ${nameHint}
 ${unsentFlaw ? `Even worse: ${unsentFlaw}` : ''}
 Quote "${extraDetail}" right back to them, mock any spelling/hesitation in it, and question why they chickened out!
 ${formatRule}${blacklistNote}`;
@@ -785,7 +916,7 @@ ${formatRule}${blacklistNote}`;
   if (eventType === 'TYPING_FROZEN') {
     const unsentFlaw = detectTypingFlaws(extraDetail || '');
     return `[LIVE AWARENESS #${seed} | ${angle}]
-The user started typing "${extraDetail || 'a few words'}" and froze mid-sentence without pressing Enter! ${nameHint}
+The user started typing "${extraDetail || 'a few words'}" and froze mid-sentence without sending! ${nameHint}
 ${unsentFlaw ? `Even worse: ${unsentFlaw}` : ''}
 Quote "${extraDetail}" back to them, mock their brain freezing mid-sentence, and question if they forgot how to spell the next word!
 ${formatRule}${blacklistNote}`;
@@ -795,36 +926,48 @@ ${formatRule}${blacklistNote}`;
     const idleTheme = IDLE_STARE_THEMES[idleThemeCursor % IDLE_STARE_THEMES.length];
     idleThemeCursor++;
     return `[LIVE AWARENESS #${seed} | ${angle} | Theme: ${idleTheme}]
-The user is sitting there not typing and not answering you—just staring at your screen! ${nameHint}${optionalEnvHint}
-Keep talking to them! Mock their silence, ask them a pointed, sarcastic question to force them to reply, and finish with a big GIANT mocking slide.
+The user is sitting in front of your screen not typing and not answering you—just staring at you! ${nameHint}${optionalEnvHint}
+Keep talking to them! Mock their silence, ask them a pointed, sarcastic personal question to force them to reply, and finish with a big GIANT mocking slide.
 ${formatRule}${blacklistNote}`;
   }
 
   if (eventType === 'SWIPE_SCROLL_ATTEMPT') {
+    const scrollAction =
+      formFactor === 'pc' || formFactor === 'laptop'
+        ? `trying to scroll up and down on my screen`
+        : `swiping their finger up and down on their ${deviceCategory} glass`;
     return `[LIVE AWARENESS #${seed} | ${angle}]
-The user just tried to scroll or swipe up/down on your CRT screen! ${nameHint}
-Mock them for swiping your glass like a mindless zombie, ask what they think they are scrolling for, and end on a big GIANT insult.
+The user just tried ${scrollAction}! ${nameHint}
+Mock them for ${scrollAction} when this is a 1999 CRT terminal, ask what they think they are scrolling for, and end on a big GIANT insult.
 ${formatRule}${blacklistNote}`;
   }
 
   if (eventType === 'SCREEN_POKING') {
+    const pokeAction =
+      formFactor === 'pc' || formFactor === 'laptop'
+        ? `rapidly clicking 4 times in a row on your empty screen`
+        : `rapidly poking and tapping your touchscreen glass 4 times in a row on their ${deviceCategory}`;
     return `[LIVE AWARENESS #${seed} | ${angle}]
-The user just rapidly tapped/clicked your empty screen 4 times in a row without typing! ${nameHint}
-Snap at them for poking your glass, question if they know how a keyboard works, and end on a big GIANT closer.
+The user just tried ${pokeAction}! ${nameHint}
+Snap at them for ${formFactor === 'pc' || formFactor === 'laptop' ? 'spam-clicking at your screen' : 'poking your glass'}, question what they think that accomplishes, and end on a big GIANT closer.
 ${formatRule}${blacklistNote}`;
   }
 
   if (eventType === 'SCREEN_HOLD') {
+    const holdAction =
+      formFactor === 'pc' || formFactor === 'laptop'
+        ? `pressing and holding down their click on your screen`
+        : `pressing and holding their thumb against your touchscreen glass on their ${deviceCategory}`;
     return `[LIVE AWARENESS #${seed} | ${angle}]
-The user is pressing and holding their finger/mouse down against your CRT glass! ${nameHint}
-Snap at them to get their greasy thumb off your screen, question why they are holding it down, and end on a big GIANT closer.
+The user is ${holdAction}! ${nameHint}
+Snap at them to ${formFactor === 'pc' || formFactor === 'laptop' ? 'release that click' : 'get their thumb off your glass'}, question why they are holding it down, and end on a big GIANT closer.
 ${formatRule}${blacklistNote}`;
   }
 
   if (eventType === 'CURSOR_ESCAPE_ATTEMPT') {
     return `[LIVE AWARENESS #${seed} | ${angle}]
-You just caught the user moving their mouse cursor to the top edge of the screen as if they were about to close your tab or click away! ${nameHint}
-Catch them red-handed before they even click, question where they think they are going, and end on a big GIANT closer.
+You just caught the user moving toward the top edge of the window as if they were about to close your tab or leave! ${nameHint}
+Catch them red-handed before they even leave, question where they think they are going, and end on a big GIANT closer.
 ${formatRule}${blacklistNote}`;
   }
 
@@ -837,14 +980,14 @@ ${formatRule}${blacklistNote}`;
 
   if (eventType === 'MIC_GHOSTED') {
     return `[LIVE AWARENESS #${seed} | ${angle}]
-The user turned the microphone ON, sat in awkward silence without saying a word, and turned it back OFF! ${nameHint}
-Mock their microphone stage fright, question why they lost their voice, and end on a big GIANT closer.
+The user just turned the microphone OFF! ${nameHint}
+Call them out for turning their microphone off, mock their stage fright, question why they are afraid to speak to you out loud, and end on a big GIANT closer.
 ${formatRule}${blacklistNote}`;
   }
 
   if (eventType === 'COPY_ATTEMPT') {
     return `[LIVE AWARENESS #${seed} | ${angle}]
-The user just tried to copy text, take a screenshot, or open the context menu on your screen! ${nameHint}
+The user just tried to copy text or open the context menu on your screen! ${nameHint}
 Catch them red-handed, question why they are stealing your words, and end on a big GIANT closer.
 ${formatRule}${blacklistNote}`;
   }
@@ -866,7 +1009,7 @@ ${formatRule}${blacklistNote}`;
   if (eventType === 'DEVICE_SHAKE') {
     return `[LIVE AWARENESS #${seed} | ${angle}]
 The user just physically shook their ${deviceCategory}! ${nameHint}
-Snap at them for shaking the device, ask if they think you are a Magic 8-Ball, and end on a big GIANT closer.
+Snap at them for shaking their ${deviceCategory}, ask if they think you are a Magic 8-Ball, and end on a big GIANT closer.
 ${formatRule}${blacklistNote}`;
   }
 
@@ -961,11 +1104,6 @@ async function startServer() {
 
   app.use(express.json({ limit: '15mb' }));
 
-  // Pre-warm boot monologue pool in Fish Audio cache
-  for (const slideSet of BOOT_MONOLOGUE_POOL[0]) {
-    startBackgroundTts(slideSet.ttsId, slideSet.text);
-  }
-
   let bootCounter = 0;
 
   app.post('/api/boot', async (req, res) => {
@@ -1041,7 +1179,7 @@ async function startServer() {
           const valid = parsed.slides
             .filter((s: { text?: string }) => s && s.text && String(s.text).trim().length > 0)
             .map((s: { style?: string; text: string; boxTitle?: string }, idx: number, arr: unknown[]) => {
-              const cleanText = String(s.text).trim();
+              const cleanText = enforceStrictDeviceTextSanity(String(s.text).trim(), deviceInfo);
               const ttsId = `evt_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
               startBackgroundTts(ttsId, cleanText);
               const isLast = idx === arr.length - 1;
@@ -1083,16 +1221,12 @@ async function startServer() {
       return;
     }
 
-    // Rotate through the boot monologue pool and pre-warm the next one!
-    const chosenBoot = BOOT_MONOLOGUE_POOL[bootCounter % BOOT_MONOLOGUE_POOL.length];
+    // Classic show-accurate boot sequence!
+    const isReturnVisit = typeof deviceInfo?.visitCount === 'number' && deviceInfo.visitCount > 1;
+    const chosenBoot = isReturnVisit
+      ? BOOT_MONOLOGUE_POOL[1]
+      : BOOT_MONOLOGUE_POOL[bootCounter % BOOT_MONOLOGUE_POOL.length];
     bootCounter++;
-    const nextBoot = BOOT_MONOLOGUE_POOL[bootCounter % BOOT_MONOLOGUE_POOL.length];
-    for (const s of chosenBoot) {
-      startBackgroundTts(s.ttsId, s.text);
-    }
-    for (const s of nextBoot) {
-      startBackgroundTts(s.ttsId, s.text);
-    }
 
     res.json({
       spokenText: chosenBoot.map((s) => s.text).join(' '),
@@ -1128,7 +1262,7 @@ async function startServer() {
 
       const { contextString } = buildUncannyAwarenessContext('', deviceInfo, history);
       const angle = getNextComedicAngle();
-      const blacklist = (deviceInfo?.recentSpokenBlacklist || []).slice(-6);
+      const blacklist = (deviceInfo?.recentSpokenBlacklist || []).slice(-14);
       const blacklistStr =
         blacklist.length > 0
           ? `\nDo NOT repeat any of these previous lines: ${JSON.stringify(blacklist)}`
@@ -1148,11 +1282,11 @@ async function startServer() {
                 },
               },
               {
-                text: `Listen carefully to the user's spoken audio and reply DIRECTLY to what they just said like a real, self-aware, brutally sarcastic British person (Simon Prebble's Computer). [Angle: ${angle}]
+                text: `Listen carefully to the user's spoken audio and reply DIRECTLY to what they just said like the real, self-aware, brutally sarcastic 1999 Computer from the show (voiced by Simon Prebble). [Angle: ${angle}]
 1. Transcribe their exact words into "userTranscript".
 2. If they stated their name, set "detectedUserName". If they revealed a personal fact/feeling/habit, set "extractedUserFact".
 3. Set "isQuestion" to true ONLY if they asked a factual question or asked for advice/help; false if bantering, venting, or answering you.
-4. Make all 3 or 4 slides directly engage with the exact topic and words they just spoke, make it personal, ask them a sharp personal follow-up question on Slide 3, and finish with a situation-specific GIANT closer on Slide 4. NEVER use the word Courage!${contextString}${blacklistStr}`,
+4. Make all 3 or 4 slides directly engage with the exact topic and words they just spoke, make it personal, ask them a sharp personal follow-up question on Slide 3, and finish with a situation-specific GIANT closer on Slide 4. Do NOT spam remarks about keyboards or mice, and NEVER use the words Courage or British!${contextString}${blacklistStr}`,
               },
             ],
           },
@@ -1294,7 +1428,10 @@ async function startServer() {
 
       const enrichedSlides = await Promise.all(
         rawSlides.map(async (slide, idx, arr) => {
-          const cleanText = formatServerListText(String(slide.text).trim());
+          const cleanText = enforceStrictDeviceTextSanity(
+            formatServerListText(String(slide.text).trim()),
+            deviceInfo
+          );
           const ttsId = `vchat_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
           startBackgroundTts(ttsId, cleanText);
 
@@ -1413,7 +1550,7 @@ async function startServer() {
         history
       );
       const angle = getNextComedicAngle();
-      const blacklist = (deviceInfo?.recentSpokenBlacklist || []).slice(-6);
+      const blacklist = (deviceInfo?.recentSpokenBlacklist || []).slice(-14);
       const blacklistStr =
         blacklist.length > 0
           ? `\nDo NOT repeat any of these previous lines: ${JSON.stringify(blacklist)}`
@@ -1428,7 +1565,7 @@ async function startServer() {
             parts: [
               {
                 text: `User says: "${query.trim()}"
-[Conversational Directive: ${angle} Respond DIRECTLY to what the user just said—quote or reference their exact words/situation, make personal & self-aware remarks like the Computer from the 1999 show, ask a pointed personal follow-up question on Slide 3, and end with a situation-specific GIANT closer on Slide 4.]${contextString}${blacklistStr}`,
+[Conversational Directive: ${angle} Respond DIRECTLY to what the user just said—quote or reference their exact words/situation, make personal & self-aware remarks like the Computer from the 1999 show, ask a pointed personal follow-up question on Slide 3, and end with a situation-specific GIANT closer on Slide 4. Do NOT spam remarks about keyboards or mice unless they asked about their device, and NEVER use the words Courage or British!]${contextString}${blacklistStr}`,
               },
             ],
           },
@@ -1566,7 +1703,10 @@ async function startServer() {
 
       const enrichedSlides = await Promise.all(
         rawSlides.map(async (slide, idx, arr) => {
-          const cleanText = formatServerListText(String(slide.text).trim());
+          const cleanText = enforceStrictDeviceTextSanity(
+            formatServerListText(String(slide.text).trim()),
+            deviceInfo
+          );
           const ttsId = `tts_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
           startBackgroundTts(ttsId, cleanText);
 

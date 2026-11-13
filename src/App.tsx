@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Mic, MicOff, Download } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Download } from 'lucide-react';
 import {
   soundEngine,
   SlideSpec,
@@ -19,7 +19,10 @@ import {
   generateStandaloneLiveEvent,
   generateStandaloneBootSlides,
   getVoiceBankAudioBase64,
+  getCompoundVoiceBankParts,
   loadStandaloneVoiceBank,
+  STANDALONE_VOICE_LINES,
+  StrictDeviceFormFactor,
 } from './utils/standaloneEngine';
 
 type ScreenState = 'BOOTING' | 'IDLE' | 'LISTENING' | 'SEARCHING' | 'FOUND_BELL' | 'SPEAKING';
@@ -101,7 +104,7 @@ function loadPersistentProfile(): PersistentUserProfile {
         pastUserTopics: Array.isArray(parsed.pastUserTopics) ? parsed.pastUserTopics.slice(0, 6) : [],
         userFacts: Array.isArray(parsed.userFacts) ? parsed.userFacts.slice(0, 10) : [],
         recentSpokenBlacklist: Array.isArray(parsed.recentSpokenBlacklist)
-          ? parsed.recentSpokenBlacklist.slice(-18)
+          ? parsed.recentSpokenBlacklist.slice(-40)
           : [],
       };
     }
@@ -127,6 +130,7 @@ function savePersistentProfile(profile: PersistentUserProfile): void {
 }
 
 function detectDeviceEnvironmentSync(): {
+  deviceFormFactor: StrictDeviceFormFactor;
   deviceCategory: string;
   deviceModel: string | null;
   isInstalledApp: boolean;
@@ -134,11 +138,17 @@ function detectDeviceEnvironmentSync(): {
   const ua = navigator.userAgent || '';
   const maxTouch = navigator.maxTouchPoints || 0;
   const minDim = Math.min(window.screen.width, window.screen.height);
+  const maxDim = Math.max(window.screen.width, window.screen.height);
+  const dpr = window.devicePixelRatio || 1;
+  const coarsePointer = window.matchMedia
+    ? window.matchMedia('(pointer: coarse)').matches
+    : false;
 
   const isStandalone =
     window.matchMedia('(display-mode: standalone)').matches ||
     Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
 
+  let deviceFormFactor: StrictDeviceFormFactor = 'pc';
   let deviceCategory = 'Desktop PC';
   let deviceModel: string | null = null;
 
@@ -147,27 +157,48 @@ function detectDeviceEnvironmentSync(): {
   const isAndroid = /Android/i.test(ua);
 
   if (isIPad) {
+    deviceFormFactor = 'tablet';
     deviceCategory = 'iPad Tablet';
   } else if (isIPhone) {
+    deviceFormFactor = 'phone';
     deviceCategory = 'iPhone';
   } else if (isAndroid) {
     const isTablet = !/Mobile/i.test(ua) || minDim >= 600;
+    deviceFormFactor = isTablet ? 'tablet' : 'phone';
     deviceCategory = isTablet ? 'Android Tablet' : 'Android Phone';
     const match = ua.match(/Android[^;]+;\s*([^;)]+?)(?:\s+Build\/|\))/i);
     if (match && match[1] && match[1].trim() !== 'K') {
       deviceModel = match[1].trim();
     }
-  } else if (/Windows/i.test(ua)) {
-    deviceCategory = maxTouch > 0 && minDim < 900 ? 'Windows Tablet' : 'Windows PC';
-  } else if (/Macintosh|Mac OS X/i.test(ua)) {
-    deviceCategory = 'Mac Computer';
   } else if (/CrOS/i.test(ua)) {
-    deviceCategory = 'Chromebook';
+    deviceFormFactor = 'laptop';
+    deviceCategory = 'Chromebook Laptop';
+  } else if (/Windows/i.test(ua)) {
+    if (maxTouch > 0 && coarsePointer && maxDim <= 1366) {
+      deviceFormFactor = 'tablet';
+      deviceCategory = 'Windows Tablet';
+    } else if (maxTouch > 0 || (maxDim <= 1728 && dpr >= 1.25)) {
+      deviceFormFactor = 'laptop';
+      deviceCategory = 'Windows Laptop';
+    } else {
+      deviceFormFactor = 'pc';
+      deviceCategory = 'Windows Desktop PC';
+    }
+  } else if (/Macintosh|Mac OS X/i.test(ua)) {
+    if (dpr >= 2 && maxDim <= 1800) {
+      deviceFormFactor = 'laptop';
+      deviceCategory = 'MacBook Laptop';
+    } else {
+      deviceFormFactor = 'pc';
+      deviceCategory = 'Mac Desktop';
+    }
   } else if (/Linux/i.test(ua)) {
-    deviceCategory = 'Linux PC';
+    deviceFormFactor = maxDim <= 1600 && dpr >= 1.25 ? 'laptop' : 'pc';
+    deviceCategory = deviceFormFactor === 'laptop' ? 'Linux Laptop' : 'Linux Desktop PC';
   }
 
   return {
+    deviceFormFactor,
     deviceCategory,
     deviceModel,
     isInstalledApp: isStandalone,
@@ -466,6 +497,7 @@ export default function App() {
   const [bootLines, setBootLines] = useState<string[]>([]);
   const [activeSlide, setActiveSlide] = useState<ActiveSlideRender | null>(null);
   const [micEnabled, setMicEnabled] = useState<boolean>(true);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
 
   // User typing in the bottom-left using the Computer's own font — hides the Computer's center text while typing!
   const [userDraft, setUserDraft] = useState<string>('');
@@ -489,6 +521,8 @@ export default function App() {
   const liveSpeechTranscriptRef = useRef<string>('');
   const audioChunksRef = useRef<Blob[]>([]);
   const micEnabledRef = useRef<boolean>(true);
+  const isMutedRef = useRef<boolean>(false);
+  const micTurnedOffWhileMutedRef = useRef<boolean>(false);
   const micUserSpeakingNowRef = useRef<boolean>(false);
   const micSpokeInSessionRef = useRef<boolean>(false);
   const startVoiceSessionRef = useRef<() => void>(() => {});
@@ -574,7 +608,7 @@ export default function App() {
         ].slice(0, 10);
       }
       if (spokenText && spokenText.trim()) {
-        p.recentSpokenBlacklist = [...p.recentSpokenBlacklist, spokenText.trim()].slice(-18);
+        p.recentSpokenBlacklist = [...p.recentSpokenBlacklist, spokenText.trim()].slice(-40);
       }
       p.lastVisitAt = Date.now();
       savePersistentProfile(p);
@@ -610,15 +644,22 @@ export default function App() {
 
     let batteryPercent: number | null = null;
     let isCharging: boolean | null = null;
+    let hasBattery = false;
 
     try {
       const nav = navigator as Navigator & {
-        getBattery?: () => Promise<BatteryManagerLike>;
+        getBattery?: () => Promise<BatteryManagerLike & { dischargingTime?: number; chargingTime?: number }>;
       };
       if (typeof nav.getBattery === 'function') {
         const bat = await nav.getBattery();
         batteryPercent = Math.round(bat.level * 100);
         isCharging = Boolean(bat.charging);
+        // On desktop PCs without a battery, Chrome often reports charging=true, level=1, chargingTime=0, dischargingTime=Infinity
+        hasBattery =
+          !bat.charging ||
+          bat.level < 1 ||
+          (typeof bat.dischargingTime === 'number' && bat.dischargingTime !== Infinity) ||
+          (typeof bat.chargingTime === 'number' && bat.chargingTime > 0 && bat.chargingTime !== Infinity);
         if (initialBatteryRef.current === null) {
           initialBatteryRef.current = batteryPercent;
         }
@@ -635,7 +676,21 @@ export default function App() {
         : 0;
 
     const syncEnv = detectDeviceEnvironmentSync();
+    let deviceFormFactor: StrictDeviceFormFactor = syncEnv.deviceFormFactor;
+    let deviceCategory = syncEnv.deviceCategory;
     let deviceModel = syncEnv.deviceModel;
+
+    // Refine Laptop vs Desktop PC using live battery telemetry
+    if (deviceFormFactor === 'pc' && hasBattery) {
+      deviceFormFactor = 'laptop';
+      if (deviceCategory.includes('Windows')) deviceCategory = 'Windows Laptop';
+      else if (deviceCategory.includes('Mac')) deviceCategory = 'MacBook Laptop';
+      else if (deviceCategory.includes('Linux')) deviceCategory = 'Linux Laptop';
+      else deviceCategory = 'Laptop Computer';
+    }
+    if (deviceFormFactor === 'phone' || deviceFormFactor === 'tablet') {
+      hasBattery = true;
+    }
 
     try {
       const uaData = (navigator as Navigator & { userAgentData?: UADataLike }).userAgentData;
@@ -700,11 +755,16 @@ export default function App() {
       cpuCores,
       ramGb,
       screenResolution,
-      inputMethod: inputMethodRef.current,
-      batteryPercent,
-      batteryDroppedBy,
-      isCharging,
-      deviceCategory: syncEnv.deviceCategory,
+      inputMethod:
+        deviceFormFactor === 'phone' || deviceFormFactor === 'tablet'
+          ? ('touchscreen' as const)
+          : inputMethodRef.current,
+      batteryPercent: hasBattery ? batteryPercent : null,
+      batteryDroppedBy: hasBattery ? batteryDroppedBy : 0,
+      isCharging: hasBattery ? isCharging : null,
+      hasBattery,
+      deviceFormFactor,
+      deviceCategory,
       deviceModel,
       isInstalledApp: syncEnv.isInstalledApp,
       connectionType,
@@ -748,19 +808,51 @@ export default function App() {
   const createDecodedSlidePromises = useCallback(
     (slides: SlideSpec[]): Array<Promise<DecodedSlide>> => {
       return slides.map(async (slide) => {
-        const ttsRes = await postComputerApi<{
-          audioBase64?: string | null;
-          audioMimeType?: string | null;
-        }>('/api/tts', { ttsId: slide.ttsId, text: slide.text }).catch(() => ({
-          audioBase64: null,
-          audioMimeType: null,
-        }));
+        // 1. Check if this slide is a compound stitched voice-bank slide ("prefix_X+clause_Y")
+        if (slide.ttsId && slide.ttsId.includes('+')) {
+          const compoundParts = await getCompoundVoiceBankParts(slide.ttsId);
+          if (compoundParts && compoundParts.length >= 2) {
+            const { buffer: audioBuffer, envelope } =
+              await soundEngine.decodeCompoundAudioWithEnvelope(compoundParts, slide.ttsId);
+            return {
+              ...slide,
+              audioBuffer,
+              audioBase64: compoundParts[0],
+              audioMimeType: 'audio/mpeg',
+              envelope,
+            };
+          }
+        }
 
-        let audioBase64: string | null = ttsRes?.audioBase64 || null;
-        if (!audioBase64) {
+        // 2. Check if this slide is already in our local 278-clip Simon Prebble voice bank (instant 0ms lookup!)
+        const isKnownBankKey = Boolean(
+          slide.ttsId && Object.prototype.hasOwnProperty.call(STANDALONE_VOICE_LINES, slide.ttsId)
+        );
+        let audioBase64: string | null = null;
+        let audioMimeType = 'audio/mpeg';
+
+        if (isKnownBankKey) {
           audioBase64 = await getVoiceBankAudioBase64(slide.ttsId, slide.text);
         }
-        const audioMimeType: string | null = ttsRes?.audioMimeType || 'audio/mpeg';
+
+        // 3. Otherwise (or if not yet in bank), fetch from the live TTS backend
+        if (!audioBase64) {
+          const ttsRes = await postComputerApi<{
+            audioBase64?: string | null;
+            audioMimeType?: string | null;
+          }>('/api/tts', { ttsId: slide.ttsId, text: slide.text }).catch(() => ({
+            audioBase64: null,
+            audioMimeType: null,
+          }));
+          audioBase64 = ttsRes?.audioBase64 || null;
+          if (ttsRes?.audioMimeType) {
+            audioMimeType = ttsRes.audioMimeType;
+          }
+          if (!audioBase64) {
+            audioBase64 = await getVoiceBankAudioBase64(slide.ttsId, slide.text);
+          }
+        }
+
         const { buffer: audioBuffer, envelope } = await soundEngine.decodeAudioWithEnvelope(
           audioBase64,
           slide.ttsId || slide.text
@@ -874,6 +966,14 @@ export default function App() {
         clearFrozenDraft?: boolean;
       }
     ) => {
+      // While muted, never speak out loud! If they turned the mic off while muted, remember it so he roasts them right after they unmute him!
+      if (isMutedRef.current) {
+        if (eventType === 'MIC_GHOSTED') {
+          micTurnedOffWhileMutedRef.current = true;
+        }
+        return;
+      }
+
       if (liveEventInFlightRef.current || micUserSpeakingNowRef.current) return;
       if (!options?.clearFrozenDraft && userDraftRef.current.length > 0) return;
 
@@ -895,21 +995,26 @@ export default function App() {
         return;
       }
 
+      const isUnmuteOrMicSensor =
+        eventType === 'UNMUTED_AFTER_MIC_OFF' ||
+        eventType === 'MUTE_TOGGLE_CAUGHT' ||
+        eventType === 'MIC_GHOSTED';
+
       const isUserInitiatedSensor =
         isScreenTouchSensor ||
+        isUnmuteOrMicSensor ||
         eventType === 'BIOMETRIC_SCAN' ||
         eventType === 'DEVICE_SHAKE' ||
         eventType === 'CHARGER_CHANGED' ||
         eventType === 'ORIENTATION_CHANGED' ||
         eventType === 'COPY_ATTEMPT' ||
         eventType === 'DEVTOOLS_ATTEMPT' ||
-        eventType === 'MUTE_TOGGLE_CAUGHT' ||
         eventType === 'TAB_OR_NOTIFICATION_RETURN' ||
         eventType === 'TYPING_CHICKENED_OUT' ||
         eventType === 'TYPING_FROZEN' ||
         eventType === 'REPLAY_OBSESSION';
 
-      const minCooldownMs = isUserInitiatedSensor ? 2200 : 12000;
+      const minCooldownMs = isUnmuteOrMicSensor ? 0 : isUserInitiatedSensor ? 2200 : 12000;
       if (now - lastLiveEventTimeRef.current < minCooldownMs) {
         return;
       }
@@ -1594,16 +1699,15 @@ export default function App() {
     // Preload Fish Audio voice bank in background while BIOS lines type out
     loadStandaloneVoiceBank().catch(() => {});
 
-    const bootFetchPromise = fetch('/api/boot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: 'BOOT' }),
-    })
-      .then(async (r) => {
-        if (!r.ok) throw new Error('Static host');
-        return await r.json();
-      })
-      .catch(() => ({ slides: [] }));
+    const bootTelemetryPromise = gatherLivePhoneTelemetry();
+    const bootFetchPromise = bootTelemetryPromise
+      .then((deviceInfo) =>
+        postComputerApi<{ slides?: SlideSpec[]; spokenText?: string }>('/api/boot', {
+          reason: 'BOOT',
+          deviceInfo,
+        })
+      )
+      .catch(() => ({ slides: [] as SlideSpec[] }));
 
     const accumulated: string[] = [];
     for (let i = 0; i < bootScript.length; i++) {
@@ -1615,13 +1719,13 @@ export default function App() {
     }
 
     if (actionEpochRef.current !== myEpoch) return;
-    const data = await bootFetchPromise;
+    const [data, bootDeviceInfo] = await Promise.all([bootFetchPromise, bootTelemetryPromise]);
     if (actionEpochRef.current !== myEpoch) return;
 
     const slides: SlideSpec[] =
       Array.isArray(data.slides) && data.slides.length > 0
         ? data.slides
-        : generateStandaloneBootSlides(p.visitCount);
+        : generateStandaloneBootSlides(p.visitCount, bootDeviceInfo);
 
     const slidePromises = createDecodedSlidePromises(slides);
     await slidePromises[0];
@@ -1643,7 +1747,7 @@ export default function App() {
         }
       },
     });
-  }, [createDecodedSlidePromises, ensurePersistentMicStream]);
+  }, [createDecodedSlidePromises, ensurePersistentMicStream, gatherLivePhoneTelemetry]);
 
   // Automatically boot on app open (and open Install Modal if launched via ?install=1 link)
   useEffect(() => {

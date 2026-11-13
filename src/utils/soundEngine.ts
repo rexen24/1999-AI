@@ -752,6 +752,85 @@ class RetroSoundEngine {
     }
   }
 
+  /**
+   * Decodes and seamlessly stitches 2 or more voice bank clips (e.g., [reactionPrefix, bodyClause])
+   * into a single natural AudioBuffer with a 110ms breath pause between clauses and full waveform envelope sync.
+   */
+  public async decodeCompoundAudioWithEnvelope(
+    audioBase64Parts: Array<string | null>,
+    cacheKey?: string
+  ): Promise<{ buffer: AudioBuffer | null; envelope: SpeechEnvelope | null }> {
+    const validParts = audioBase64Parts.filter((p): p is string => Boolean(p));
+    if (validParts.length === 0) return { buffer: null, envelope: null };
+    if (validParts.length === 1) {
+      return this.decodeAudioWithEnvelope(validParts[0], cacheKey);
+    }
+    if (cacheKey && this.decodedCache.has(cacheKey)) {
+      const hit = this.decodedCache.get(cacheKey)!;
+      return { buffer: hit.buffer, envelope: hit.envelope };
+    }
+
+    try {
+      const ctx = this.getContext();
+      const decodedSegments: Array<{ buffer: AudioBuffer; env: SpeechEnvelope }> = [];
+      for (const b64 of validParts) {
+        const { buffer, envelope } = await this.decodeAudioWithEnvelope(b64);
+        if (buffer && envelope) {
+          decodedSegments.push({ buffer, env: envelope });
+        }
+      }
+      if (decodedSegments.length === 0) return { buffer: null, envelope: null };
+      if (decodedSegments.length === 1) {
+        return { buffer: decodedSegments[0].buffer, envelope: decodedSegments[0].env };
+      }
+
+      const sampleRate = decodedSegments[0].buffer.sampleRate;
+      const pauseSamples = Math.floor(sampleRate * 0.11); // 110ms natural British breath pause
+
+      const trimmedSlices = decodedSegments.map(({ buffer, env }) => {
+        const startSample = Math.max(0, Math.floor(env.trimStartSec * buffer.sampleRate));
+        const endSample = Math.min(
+          buffer.length,
+          Math.ceil(env.speechEndSec * buffer.sampleRate)
+        );
+        const rawSlice = buffer.getChannelData(0).subarray(startSample, Math.max(startSample + 1, endSample));
+        return rawSlice;
+      });
+
+      const totalLength =
+        trimmedSlices.reduce((acc, s) => acc + s.length, 0) +
+        pauseSamples * (trimmedSlices.length - 1);
+
+      const stitchedBuffer = ctx.createBuffer(1, Math.max(1, totalLength), sampleRate);
+      const outData = stitchedBuffer.getChannelData(0);
+
+      let offset = 0;
+      for (let idx = 0; idx < trimmedSlices.length; idx++) {
+        const seg = trimmedSlices[idx];
+        outData.set(seg, offset);
+        // Apply 8ms micro-fade at segment boundaries to prevent any click
+        const fadeLen = Math.min(Math.floor(sampleRate * 0.008), Math.floor(seg.length / 4));
+        for (let f = 0; f < fadeLen; f++) {
+          const gain = f / fadeLen;
+          outData[offset + f] *= gain;
+          outData[offset + seg.length - 1 - f] *= gain;
+        }
+        offset += seg.length;
+        if (idx < trimmedSlices.length - 1) {
+          offset += pauseSamples;
+        }
+      }
+
+      const envelope = analyzeAudioBufferEnvelope(stitchedBuffer);
+      if (cacheKey) {
+        this.decodedCache.set(cacheKey, { buffer: stitchedBuffer, envelope });
+      }
+      return { buffer: stitchedBuffer, envelope };
+    } catch {
+      return this.decodeAudioWithEnvelope(validParts[0], cacheKey);
+    }
+  }
+
   public async decodeAudioBase64(audioBase64: string | null): Promise<AudioBuffer | null> {
     const { buffer } = await this.decodeAudioWithEnvelope(audioBase64);
     return buffer;
