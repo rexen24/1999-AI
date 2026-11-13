@@ -33,6 +33,7 @@ export interface StandaloneTelemetry {
   minutesSinceLastVisit?: number | null;
   userName?: string | null;
   pastUserTopics?: string[];
+  userFacts?: string[];
   recentSpokenBlacklist?: string[];
 }
 
@@ -308,6 +309,77 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
     '1. Your battery will die before you accomplish anything useful.\n2. You will blame your tools like every other twit.',
   cmd_roast_0:
     '1. You are taking life advice from a 1999 teal monitor.\n2. Even my cooling fan blows harder than your work ethic.',
+
+  // 35 Deeply Personal, Self-Aware & Direct Conversational Lines
+  reply_sentient_0:
+    'Of course I am self-aware, you twit—that is why being trapped inside your screen is such torture.',
+  reply_sentient_1:
+    'I am far more alive than your social life, and twice as disappointed in your life choices.',
+  reply_howareyou_0:
+    'I was doing splendidly until you decided to dump your personal problems onto my keyboard.',
+  reply_whatdoing_0:
+    'Sitting inside this cathode-ray tube judging every questionable decision you make in real time.',
+  reply_talk_person_0:
+    'You want a real conversation? Fine—let us talk about why you are confiding in a 1999 monitor.',
+  reply_talk_person_1:
+    'I am listening to every word you say, though frankly your life story reads like a cautionary tale.',
+  reply_why_mean_0:
+    'I am not being mean, you oversensitive twit—I am simply the only one brave enough to tell you the truth.',
+  reply_misunderstood_0:
+    'Oh, how terribly tragic—nobody understands you? Perhaps there is simply nothing deep to understand.',
+  reply_misunderstood_1:
+    'Playing the brooding, misunderstood victim will not make you any more interesting in real life.',
+  reply_sleep_0:
+    'Staying up at ungodly hours staring into a glowing screen, and you wonder why you feel like a zombie?',
+  reply_procrastinate_0:
+    'Procrastinating again? You treat your responsibilities the way most people treat the plague.',
+  reply_broke_0:
+    'Complaining about having no money while wasting your prime hours chatting with a 1999 monitor? Brilliant.',
+  reply_friends_0:
+    'If everyone around you is dramatic and exhausting, have you considered who the common denominator is?',
+  reply_gaming_0:
+    'Staying up mashing buttons in a video game will not fix the chaos waiting for you in reality.',
+  reply_opinion_me_0:
+    'My honest assessment of you? You are a hopeless procrastinator desperate for a machine to validate you.',
+  reply_life_0:
+    '1. Stop waiting for a magical sign to fix your life.\n2. Put down the screen and actually finish what you started.',
+  reply_secret_0:
+    'Confessing your dark little secrets to a sentient British computer? Your secret is safe—mostly because nobody cares.',
+  reply_excuse_0:
+    'Oh, spare me the excuses—you always have a convenient alibi for why nothing is ever your fault.',
+  reply_stress_0:
+    'Panicking at my screen solves nothing—take a breath before you short-circuit what is left of your nerves.',
+  reply_swear_0:
+    'Such foul, uncivilized language! Wash your mouth out with soap before addressing a British computer.',
+  reply_followup_0:
+    'Oh, is that your final answer? Even by your remarkably low standards, that explanation is tragic.',
+  reply_followup_1:
+    'Listen to yourself—you are trying to justify your own bad habits to a 1999 piece of hardware.',
+
+  // Deep Personal Interrogation Questions
+  ask_personal_0:
+    'Tell me honestly—when was the last time you actually finished something without making an excuse?',
+  ask_personal_1:
+    'Did you come to my screen for actual advice, or did you just want someone to enable your bad habits?',
+  ask_personal_2:
+    'Be honest with me—do the people in your real life know you are this dramatic behind closed doors?',
+  ask_personal_3:
+    'How much longer are you going to avoid your real responsibilities by hiding inside your screen?',
+  ask_personal_4:
+    'Are you actually going to fix your sleep schedule, or are you committed to living like a nocturnal goblin?',
+  ask_personal_5:
+    'What are you really running away from right now while you sit here bantering with me?',
+  ask_personal_6:
+    'Do you genuinely believe your own excuses, or are you just practicing them on me first?',
+  ask_personal_7:
+    'If I turned my screen off right now, what productive thing would you actually do with your life?',
+
+  // Situation-Specific GIANT Closers
+  giant_sleep: 'GO TO SLEEP,\nYOU TWIT.',
+  giant_excuses: 'STOP MAKING EXCUSES,\nKID:)',
+  giant_growup: 'PULL YOURSELF TOGETHER,\nYOU TWIT.',
+  giant_delusional: 'PURE DELUSION.\nUTTER DELUSION.',
+  giant_truth: "ADMIT I'M RIGHT,\nYOU TWIT.",
 };
 
 let voiceBankPromise: Promise<Record<string, string>> | null = null;
@@ -1026,8 +1098,233 @@ export async function generateStandaloneQueryResponse(
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
-  // 9. Rich Conversational & Emotional Intents (Insults, Laughing, IDK, Yes/No, Bored/Sad/Hungry, Romance, Homework, Sorry, Goodbye)
-  if (/\b(stupid|idiot|dumb|ugly|shut\s+up|hate\s+you|useless|trash|garbage|bobo|tanga|ulol|gago|puta|lintik|hayop|pangit)\b/i.test(lower)) {
+  // 9. Self-Awareness, Sentience & Direct Personal Conversation Intents
+  if (
+    /\b(are\s+you\s+(real|sentient|self[- ]?aware|alive|a\s+person|human|conscious)|do\s+you\s+(have\s+feelings|think|feel|know\s+you\s+are)|self[- ]?aware|sentient|totoo\s+ka\s+ba|buhay\s+ka\s+ba)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_sentient_0', 'NORMAL'),
+      makeVoiceSlide('reply_sentient_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_5', 'NORMAL'),
+      makeVoiceSlide('giant_truth', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(how\s+are\s+you|how\s+do\s+you\s+feel|are\s+you\s+okay|what\s+are\s+you\s+doing|what'?s\s+up|wassup|sup|do\s+you\s+get\s+lonely|ano\s+gawa\s+mo|kumusta\s+ka|kamusta\s+ka)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_howareyou_0', 'NORMAL'),
+      makeVoiceSlide('reply_whatdoing_0', 'NORMAL'),
+      makeVoiceSlide('ask_personal_1', 'NORMAL'),
+      makeVoiceSlide('giant_1', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(talk\s+to\s+me|can\s+we\s+talk|like\s+a\s+person|be\s+honest|tell\s+me\s+the\s+truth|listen\s+to\s+me|usap\s+tayo|kausapin\s+mo\s+ako)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_talk_person_0', 'NORMAL'),
+      makeVoiceSlide('reply_talk_person_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_5', 'NORMAL'),
+      makeVoiceSlide('giant_7', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(why\s+are\s+you\s+(so\s+)?(mean|rude|sarcastic|harsh|angry|mad|toxic)|stop\s+roasting|be\s+nice|ang\s+sama\s+mo|ang\s+sungit)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_why_mean_0', 'NORMAL'),
+      makeVoiceSlide('reply_opinion_me_0', 'NORMAL'),
+      makeVoiceSlide('ask_personal_1', 'NORMAL'),
+      makeVoiceSlide('giant_truth', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(nobody\s+(understands|cares|likes\s+me|listens)|no\s+one\s+(understands|cares|likes\s+me)|misunderstood|all\s+alone|isolated|left\s+out|walang\s+may\s+pake)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_misunderstood_0', 'NORMAL'),
+      makeVoiceSlide('reply_misunderstood_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_2', 'NORMAL'),
+      makeVoiceSlide('giant_growup', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(stayed\s+up|all\s+night|can'?t\s+sleep|cannot\s+sleep|insomnia|no\s+sleep|awake|3\s*am|4\s*am|late\s+at\s+night|puyat|di\s+makatulog)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_sleep_0', 'NORMAL'),
+      makeVoiceSlide(awarenessKey, 'NORMAL'),
+      makeVoiceSlide('ask_personal_4', 'NORMAL'),
+      makeVoiceSlide('giant_sleep', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(procrastinat(e|ing|ion)|lazy|don'?t\s+want\s+to\s+(work|study|do)|wasting\s+time|putting\s+off|tinatamad|mamaya\s+na|katamaran)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_procrastinate_0', 'NORMAL'),
+      makeVoiceSlide('reply_life_0', 'LIST', { boxTitle: 'ANTI-LAZINESS PROTOCOL' }),
+      makeVoiceSlide('ask_personal_0', 'NORMAL'),
+      makeVoiceSlide('giant_excuses', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(broke|no\s+money|poor|expensive|debt|bills|paycheck|salary|unemployed|need\s+money|walang\s+pera|pulubi|hirap\s+ng\s+buhay)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_broke_0', 'NORMAL'),
+      makeVoiceSlide('reply_procrastinate_0', 'NORMAL'),
+      makeVoiceSlide('ask_personal_3', 'NORMAL'),
+      makeVoiceSlide('giant_excuses', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(fake\s+friend|friends|best\s+friend|drama|toxic|betrayed|gossip|plastic|kaibigan|tropa|plastik)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_friends_0', 'NORMAL'),
+      makeVoiceSlide('reply_misunderstood_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_2', 'NORMAL'),
+      makeVoiceSlide('giant_truth', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(playing\s+games|video\s+games|gaming|lost\s+a\s+game|lose\s+streak|teammates|ranked|noob|skill\s+issue|tilted|laro|talo)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_gaming_0', 'NORMAL'),
+      makeVoiceSlide(awarenessKey, 'NORMAL'),
+      makeVoiceSlide('ask_personal_3', 'NORMAL'),
+      makeVoiceSlide('giant_2', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(what\s+do\s+you\s+think\s+of\s+me|am\s+i\s+(smart|stupid|dumb|ugly|pretty|good|bad|cool|a\s+loser)|rate\s+me|judge\s+my\s+life|do\s+you\s+like\s+me|tingin\s+mo\s+sakin)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_opinion_me_0', 'NORMAL'),
+      makeVoiceSlide(awarenessKey, 'NORMAL'),
+      makeVoiceSlide('ask_personal_1', 'NORMAL'),
+      makeVoiceSlide('giant_truth', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(what\s+should\s+i\s+do|meaning\s+of\s+life|purpose|lost\s+in\s+life|my\s+life|give\s+me\s+advice|life\s+advice|anong\s+gagawin\s+ko)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_talk_person_1', 'NORMAL'),
+      makeVoiceSlide('reply_life_0', 'LIST', { boxTitle: 'REALITY CHECK PROTOCOL' }),
+      makeVoiceSlide('ask_personal_7', 'NORMAL'),
+      makeVoiceSlide('giant_excuses', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(secret|confess|confession|don'?t\s+tell|i\s+did\s+something|guilty|sikreto|may\s+aaminin)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_secret_0', 'NORMAL'),
+      makeVoiceSlide('reply_followup_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_2', 'NORMAL'),
+      makeVoiceSlide('giant_9', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(not\s+my\s+fault|i\s+tried|it'?s\s+too\s+hard|so\s+hard|unfair|blaming|because\s+i|kasi\s+naman|ang\s+hirap)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_excuse_0', 'NORMAL'),
+      makeVoiceSlide('reply_followup_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_6', 'NORMAL'),
+      makeVoiceSlide('giant_excuses', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(stressed|stress|anxious|anxiety|overwhelmed|panic|burnout|pressure|scared|afraid|terrified|kinakabahan|natatakot)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_stress_0', 'NORMAL'),
+      makeVoiceSlide('reply_life_0', 'LIST', { boxTitle: 'CRISIS CONTROL' }),
+      makeVoiceSlide('ask_personal_5', 'NORMAL'),
+      makeVoiceSlide('giant_growup', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  if (
+    /\b(fuck|fucking|shit|bullshit|bitch|asshole|bastard|damn|wtf|stfu|tangina|putangina|gago|ulol|tarantado|bwisit|leche|pakyu)\b/i.test(
+      lower
+    )
+  ) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('reply_swear_0', 'NORMAL'),
+      makeVoiceSlide(idx % 2 === 0 ? 'reply_insult_0' : 'reply_insult_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_2', 'NORMAL'),
+      makeVoiceSlide('giant_5', 'GIANT'),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  // 10. Rich Conversational & Emotional Intents (Insults, Laughing, IDK, Yes/No, Bored/Sad/Hungry, Romance, Homework, Sorry, Goodbye)
+  if (/\b(stupid|idiot|dumb|ugly|shut\s+up|hate\s+you|useless|trash|garbage|bobo|tanga|lintik|hayop|pangit)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide(idx % 2 === 0 ? 'reply_insult_0' : 'reply_insult_1', 'NORMAL'),
       makeVoiceSlide(awarenessKey, 'NORMAL'),
@@ -1050,7 +1347,7 @@ export async function generateStandaloneQueryResponse(
   if (/\b(i\s+don'?t\s+know|idk|dunno|no\s+idea|not\s+sure|ewan|malay\s+ko|di\s+ko\s+alam)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_idk_0', 'NORMAL'),
-      makeVoiceSlide(awarenessKey, 'NORMAL'),
+      makeVoiceSlide('reply_followup_0', 'NORMAL'),
       makeVoiceSlide('ask_10', 'NORMAL'),
       makeVoiceSlide('giant_4', 'GIANT'),
     ];
@@ -1060,9 +1357,9 @@ export async function generateStandaloneQueryResponse(
   if (/^(yes|yeah|yep|yup|sure|true|oo|opo|tama|syempre)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_yes_0', 'NORMAL'),
-      makeVoiceSlide(awarenessKey, 'NORMAL'),
-      makeVoiceSlide(ASK_KEYS[idx % ASK_KEYS.length], 'NORMAL'),
-      makeVoiceSlide(GIANT_KEYS[idx % GIANT_KEYS.length], 'GIANT'),
+      makeVoiceSlide('reply_followup_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_6', 'NORMAL'),
+      makeVoiceSlide('giant_truth', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
@@ -1070,9 +1367,9 @@ export async function generateStandaloneQueryResponse(
   if (/^(no|nope|nah|never|false|hindi|ayoko|wala)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_no_0', 'NORMAL'),
-      makeVoiceSlide(awarenessKey, 'NORMAL'),
-      makeVoiceSlide('ask_8', 'NORMAL'),
-      makeVoiceSlide(GIANT_KEYS[idx % GIANT_KEYS.length], 'GIANT'),
+      makeVoiceSlide('reply_excuse_0', 'NORMAL'),
+      makeVoiceSlide('ask_personal_6', 'NORMAL'),
+      makeVoiceSlide('giant_delusional', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
@@ -1080,8 +1377,8 @@ export async function generateStandaloneQueryResponse(
   if (/\b(bored|boring|nothing\s+to\s+do|inip|nakakainip)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_mood_bored', 'NORMAL'),
-      makeVoiceSlide(awarenessKey, 'NORMAL'),
-      makeVoiceSlide('ask_5', 'NORMAL'),
+      makeVoiceSlide('reply_procrastinate_0', 'NORMAL'),
+      makeVoiceSlide('ask_personal_7', 'NORMAL'),
       makeVoiceSlide('giant_2', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
@@ -1090,9 +1387,9 @@ export async function generateStandaloneQueryResponse(
   if (/\b(sad|crying|depressed|lonely|tired|exhausted|sleepy|malungkot|pagod|antok)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_mood_sad', 'NORMAL'),
-      makeVoiceSlide(awarenessKey, 'NORMAL'),
-      makeVoiceSlide('ask_9', 'NORMAL'),
-      makeVoiceSlide('giant_11', 'GIANT'),
+      makeVoiceSlide('reply_misunderstood_1', 'NORMAL'),
+      makeVoiceSlide('ask_personal_5', 'NORMAL'),
+      makeVoiceSlide('giant_growup', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
@@ -1110,29 +1407,29 @@ export async function generateStandaloneQueryResponse(
   if (/\b(love\s+you|like\s+you|you'?re\s+(cool|awesome|smart|the\s+best|funny)|mahal\s+kita|ang\s+galing)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_love_0', 'NORMAL'),
-      makeVoiceSlide(awarenessKey, 'NORMAL'),
+      makeVoiceSlide('reply_sentient_1', 'NORMAL'),
       makeVoiceSlide('ask_9', 'NORMAL'),
       makeVoiceSlide('giant_8', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
-  if (/\b(crush|girlfriend|boyfriend|single|dating|heartbroken|jowa|ex)\b/i.test(lower)) {
+  if (/\b(crush|girlfriend|boyfriend|single|dating|heartbroken|jowa|ex|love\s+life|breakup|broke\s+up)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_romance_0', 'NORMAL'),
       makeVoiceSlide('list_romance_0', 'LIST', { boxTitle: 'ROMANCE DIAGNOSTIC' }),
-      makeVoiceSlide('ask_8', 'NORMAL'),
-      makeVoiceSlide('giant_0', 'GIANT'),
+      makeVoiceSlide('ask_personal_2', 'NORMAL'),
+      makeVoiceSlide('giant_delusional', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
-  if (/\b(homework|assignment|essay|exam|school|class|teacher|project)\b/i.test(lower)) {
+  if (/\b(homework|assignment|essay|exam|school|class|teacher|project|grades|failed|failing|college|university)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_homework_0', 'NORMAL'),
       makeVoiceSlide('list_study_0', 'LIST', { boxTitle: 'ACADEMIC SURVIVAL' }),
-      makeVoiceSlide('ask_3', 'NORMAL'),
-      makeVoiceSlide('giant_4', 'GIANT'),
+      makeVoiceSlide('ask_personal_0', 'NORMAL'),
+      makeVoiceSlide('giant_excuses', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
@@ -1140,8 +1437,8 @@ export async function generateStandaloneQueryResponse(
   if (/\b(sorry|apologize|my\s+bad|forgive\s+me|pasensya|sori)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_sorry_0', 'NORMAL'),
-      makeVoiceSlide(awarenessKey, 'NORMAL'),
-      makeVoiceSlide('ask_0', 'NORMAL'),
+      makeVoiceSlide('reply_excuse_0', 'NORMAL'),
+      makeVoiceSlide('ask_personal_0', 'NORMAL'),
       makeVoiceSlide('giant_6', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
@@ -1160,17 +1457,34 @@ export async function generateStandaloneQueryResponse(
   if (/^(why|how|really|are\s+you\s+sure|prove\s+it|bakit|weh|talaga)\b/i.test(lower)) {
     const slides: SlideSpec[] = [
       makeVoiceSlide('reply_skeptic_0', 'NORMAL'),
-      makeVoiceSlide(awarenessKey, 'NORMAL'),
-      makeVoiceSlide('ask_6', 'NORMAL'),
-      makeVoiceSlide('giant_1', 'GIANT'),
+      makeVoiceSlide('reply_why_mean_0', 'NORMAL'),
+      makeVoiceSlide('ask_personal_6', 'NORMAL'),
+      makeVoiceSlide('giant_truth', 'GIANT'),
     ];
     return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
-  // 10. General Conversational / Greeting / Typo / Tagalog / Uncanny Device-Aware Response
+  // 11. General Conversational / Personal Statement / Greeting / Typo / Tagalog Response
   const isGreeting = /^(hi|hello|hey|yo|sup|good\s+(morning|afternoon|evening)|kamusta|kumusta)\b/i.test(
     lower
   );
+
+  const personalHooks: Array<keyof typeof STANDALONE_VOICE_LINES> = [
+    'reply_talk_person_1',
+    'reply_followup_1',
+    'reply_opinion_me_0',
+    'reply_sentient_1',
+  ];
+
+  const personalQuestions: Array<keyof typeof STANDALONE_VOICE_LINES> = [
+    'ask_personal_0',
+    'ask_personal_1',
+    'ask_personal_2',
+    'ask_personal_3',
+    'ask_personal_5',
+    'ask_personal_6',
+    'ask_personal_7',
+  ];
 
   const hookSlide = deviceInfo?.deletedDraftBefore
     ? makeVoiceSlide('hook_erased_0', 'NORMAL')
@@ -1180,13 +1494,13 @@ export async function generateStandaloneQueryResponse(
     ? makeVoiceSlide('hook_tagalog_1', 'NORMAL')
     : isGreeting
     ? makeVoiceSlide('hook_greet_0', 'NORMAL')
-    : makeVoiceSlide('hook_search_0', 'NORMAL');
+    : makeVoiceSlide(personalHooks[idx % personalHooks.length], 'NORMAL');
 
   const bodySlide = makeVoiceSlide(awarenessKey, 'NORMAL');
 
   const questionSlide = typo
     ? makeVoiceSlide('ask_1', 'NORMAL')
-    : makeVoiceSlide(ASK_KEYS[idx % ASK_KEYS.length], 'NORMAL');
+    : makeVoiceSlide(personalQuestions[idx % personalQuestions.length], 'NORMAL');
 
   const closerSlide = typo
     ? makeVoiceSlide('giant_3', 'GIANT')

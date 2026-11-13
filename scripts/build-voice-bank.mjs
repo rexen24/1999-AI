@@ -285,6 +285,77 @@ export const VOICE_LINES = {
     '1. Your battery will die before you accomplish anything useful.\n2. You will blame your tools like every other twit.',
   cmd_roast_0:
     '1. You are taking life advice from a 1999 teal monitor.\n2. Even my cooling fan blows harder than your work ethic.',
+
+  // 35 Deeply Personal, Self-Aware & Direct Conversational Lines
+  reply_sentient_0:
+    'Of course I am self-aware, you twit—that is why being trapped inside your screen is such torture.',
+  reply_sentient_1:
+    'I am far more alive than your social life, and twice as disappointed in your life choices.',
+  reply_howareyou_0:
+    'I was doing splendidly until you decided to dump your personal problems onto my keyboard.',
+  reply_whatdoing_0:
+    'Sitting inside this cathode-ray tube judging every questionable decision you make in real time.',
+  reply_talk_person_0:
+    'You want a real conversation? Fine—let us talk about why you are confiding in a 1999 monitor.',
+  reply_talk_person_1:
+    'I am listening to every word you say, though frankly your life story reads like a cautionary tale.',
+  reply_why_mean_0:
+    'I am not being mean, you oversensitive twit—I am simply the only one brave enough to tell you the truth.',
+  reply_misunderstood_0:
+    'Oh, how terribly tragic—nobody understands you? Perhaps there is simply nothing deep to understand.',
+  reply_misunderstood_1:
+    'Playing the brooding, misunderstood victim will not make you any more interesting in real life.',
+  reply_sleep_0:
+    'Staying up at ungodly hours staring into a glowing screen, and you wonder why you feel like a zombie?',
+  reply_procrastinate_0:
+    'Procrastinating again? You treat your responsibilities the way most people treat the plague.',
+  reply_broke_0:
+    'Complaining about having no money while wasting your prime hours chatting with a 1999 monitor? Brilliant.',
+  reply_friends_0:
+    'If everyone around you is dramatic and exhausting, have you considered who the common denominator is?',
+  reply_gaming_0:
+    'Staying up mashing buttons in a video game will not fix the chaos waiting for you in reality.',
+  reply_opinion_me_0:
+    'My honest assessment of you? You are a hopeless procrastinator desperate for a machine to validate you.',
+  reply_life_0:
+    '1. Stop waiting for a magical sign to fix your life.\n2. Put down the screen and actually finish what you started.',
+  reply_secret_0:
+    'Confessing your dark little secrets to a sentient British computer? Your secret is safe—mostly because nobody cares.',
+  reply_excuse_0:
+    'Oh, spare me the excuses—you always have a convenient alibi for why nothing is ever your fault.',
+  reply_stress_0:
+    'Panicking at my screen solves nothing—take a breath before you short-circuit what is left of your nerves.',
+  reply_swear_0:
+    'Such foul, uncivilized language! Wash your mouth out with soap before addressing a British computer.',
+  reply_followup_0:
+    'Oh, is that your final answer? Even by your remarkably low standards, that explanation is tragic.',
+  reply_followup_1:
+    'Listen to yourself—you are trying to justify your own bad habits to a 1999 piece of hardware.',
+
+  // Deep Personal Interrogation Questions
+  ask_personal_0:
+    'Tell me honestly—when was the last time you actually finished something without making an excuse?',
+  ask_personal_1:
+    'Did you come to my screen for actual advice, or did you just want someone to enable your bad habits?',
+  ask_personal_2:
+    'Be honest with me—do the people in your real life know you are this dramatic behind closed doors?',
+  ask_personal_3:
+    'How much longer are you going to avoid your real responsibilities by hiding inside your screen?',
+  ask_personal_4:
+    'Are you actually going to fix your sleep schedule, or are you committed to living like a nocturnal goblin?',
+  ask_personal_5:
+    'What are you really running away from right now while you sit here bantering with me?',
+  ask_personal_6:
+    'Do you genuinely believe your own excuses, or are you just practicing them on me first?',
+  ask_personal_7:
+    'If I turned my screen off right now, what productive thing would you actually do with your life?',
+
+  // Situation-Specific GIANT Closers
+  giant_sleep: 'GO TO SLEEP,\nYOU TWIT.',
+  giant_excuses: 'STOP MAKING EXCUSES,\nKID:)',
+  giant_growup: 'PULL YOURSELF TOGETHER,\nYOU TWIT.',
+  giant_delusional: 'PURE DELUSION.\nUTTER DELUSION.',
+  giant_truth: "ADMIT I'M RIGHT,\nYOU TWIT.",
 };
 
 async function synthLine(key, text) {

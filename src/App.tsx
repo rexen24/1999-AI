@@ -51,10 +51,43 @@ interface PersistentUserProfile {
   visitCount: number;
   lastVisitAt: number | null;
   pastUserTopics: string[];
+  userFacts: string[];
   recentSpokenBlacklist: string[];
 }
 
 const PROFILE_STORAGE_KEY = '1999ai_user_profile_v1';
+
+const LIVE_BACKEND_ORIGINS = [
+  '',
+  'https://ais-pre-oefdleqwcby3ljax23rj6l-591783217576.asia-northeast1.run.app',
+  'https://ais-dev-oefdleqwcby3ljax23rj6l-591783217576.asia-northeast1.run.app',
+];
+
+async function postComputerApi<T>(path: string, body: unknown): Promise<T> {
+  const isGitHubPages =
+    typeof window !== 'undefined' && /github\.io$/i.test(window.location.hostname);
+  const originsToTry = isGitHubPages ? LIVE_BACKEND_ORIGINS.slice(1) : LIVE_BACKEND_ORIGINS;
+
+  for (const origin of originsToTry) {
+    try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), origin ? 9500 : 12000);
+      const res = await fetch(`${origin}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      window.clearTimeout(timeout);
+      if (res.ok) {
+        return (await res.json()) as T;
+      }
+    } catch {
+      // Try next origin
+    }
+  }
+  throw new Error('All backend origins unreachable');
+}
 
 function loadPersistentProfile(): PersistentUserProfile {
   try {
@@ -66,6 +99,7 @@ function loadPersistentProfile(): PersistentUserProfile {
         visitCount: typeof parsed.visitCount === 'number' ? parsed.visitCount : 0,
         lastVisitAt: typeof parsed.lastVisitAt === 'number' ? parsed.lastVisitAt : null,
         pastUserTopics: Array.isArray(parsed.pastUserTopics) ? parsed.pastUserTopics.slice(0, 6) : [],
+        userFacts: Array.isArray(parsed.userFacts) ? parsed.userFacts.slice(0, 10) : [],
         recentSpokenBlacklist: Array.isArray(parsed.recentSpokenBlacklist)
           ? parsed.recentSpokenBlacklist.slice(-18)
           : [],
@@ -79,6 +113,7 @@ function loadPersistentProfile(): PersistentUserProfile {
     visitCount: 0,
     lastVisitAt: null,
     pastUserTopics: [],
+    userFacts: [],
     recentSpokenBlacklist: [],
   };
 }
@@ -507,9 +542,14 @@ export default function App() {
     }
   }, [userDraft]);
 
-  // Helper to record spoken lines and detected user names into persistent storage
+  // Helper to record spoken lines, detected user names, and personal user facts into persistent storage
   const recordModelOutputToProfile = useCallback(
-    (spokenText: string, userQuery?: string, detectedUserName?: string | null) => {
+    (
+      spokenText: string,
+      userQuery?: string,
+      detectedUserName?: string | null,
+      extractedUserFact?: string | null
+    ) => {
       const p = profileRef.current;
       if (detectedUserName && detectedUserName.trim()) {
         p.userName = detectedUserName.trim();
@@ -517,6 +557,21 @@ export default function App() {
       if (userQuery && userQuery.trim().length >= 4) {
         const cleanQ = userQuery.trim().slice(0, 60);
         p.pastUserTopics = [cleanQ, ...p.pastUserTopics.filter((q) => q !== cleanQ)].slice(0, 6);
+      }
+      const candidateFact =
+        extractedUserFact && extractedUserFact.trim()
+          ? extractedUserFact.trim().slice(0, 90)
+          : userQuery &&
+            /\b(i\s+(?:am|feel|stayed|failed|hate|love|like|work|study|play|ate|lost|broke|need|want|can't|cannot)|my\s+(?:gf|bf|girlfriend|boyfriend|crush|ex|mom|dad|friend|friends|job|school|life|grades|exam|test))\b/i.test(
+              userQuery
+            )
+          ? userQuery.trim().slice(0, 90)
+          : null;
+      if (candidateFact) {
+        p.userFacts = [
+          candidateFact,
+          ...(p.userFacts || []).filter((f) => f.toLowerCase() !== candidateFact.toLowerCase()),
+        ].slice(0, 10);
       }
       if (spokenText && spokenText.trim()) {
         p.recentSpokenBlacklist = [...p.recentSpokenBlacklist, spokenText.trim()].slice(-18);
@@ -669,6 +724,7 @@ export default function App() {
       minutesSinceLastVisit: minutesSinceLastVisitRef.current,
       userName: p.userName,
       pastUserTopics: p.pastUserTopics,
+      userFacts: p.userFacts,
       recentSpokenBlacklist: p.recentSpokenBlacklist,
     };
   }, []);
@@ -692,16 +748,13 @@ export default function App() {
   const createDecodedSlidePromises = useCallback(
     (slides: SlideSpec[]): Array<Promise<DecodedSlide>> => {
       return slides.map(async (slide) => {
-        const ttsRes = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ttsId: slide.ttsId, text: slide.text }),
-        })
-          .then(async (r) => {
-            if (!r.ok) throw new Error('Static host');
-            return await r.json();
-          })
-          .catch(() => ({ audioBase64: null, audioMimeType: null }));
+        const ttsRes = await postComputerApi<{
+          audioBase64?: string | null;
+          audioMimeType?: string | null;
+        }>('/api/tts', { ttsId: slide.ttsId, text: slide.text }).catch(() => ({
+          audioBase64: null,
+          audioMimeType: null,
+        }));
 
         let audioBase64: string | null = ttsRes?.audioBase64 || null;
         if (!audioBase64) {
@@ -871,10 +924,9 @@ export default function App() {
         const deviceInfo = await gatherLivePhoneTelemetry();
         if (actionEpochRef.current !== myEpoch) return;
 
-        const data = await fetch('/api/boot', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const data = await postComputerApi<{ spokenText?: string; slides?: SlideSpec[] }>(
+          '/api/boot',
+          {
             reason: 'LIVE_EVENT',
             eventType,
             awaySeconds: options?.awaySeconds ?? 6,
@@ -882,21 +934,16 @@ export default function App() {
             deviceInfo,
             extraDetail: options?.extraDetail || '',
             history: historyRef.current,
-          }),
-        })
-          .then(async (r) => {
-            if (!r.ok) throw new Error('Static host');
-            return await r.json();
-          })
-          .catch(() =>
-            generateStandaloneLiveEvent(
-              eventType,
-              options?.awaySeconds ?? 6,
-              distractionCountRef.current,
-              deviceInfo,
-              options?.extraDetail || ''
-            )
-          );
+          }
+        ).catch(() =>
+          generateStandaloneLiveEvent(
+            eventType,
+            options?.awaySeconds ?? 6,
+            distractionCountRef.current,
+            deviceInfo,
+            options?.extraDetail || ''
+          )
+        );
 
         if (actionEpochRef.current !== myEpoch) return;
 
@@ -1189,36 +1236,35 @@ export default function App() {
             const deviceInfo = await gatherLivePhoneTelemetry(capturedBrowserTranscript || undefined);
             if (actionEpochRef.current !== myEpoch || userDraftRef.current.length > 0) return;
 
-            const data = await fetch('/api/voice-chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                audioBase64: base64Data,
-                mimeType: audioBlob.type || 'audio/webm',
-                history: historyRef.current,
-                deviceInfo,
-              }),
-            })
-              .then(async (r) => {
-                if (!r.ok) throw new Error('Static host');
-                return await r.json();
-              })
-              .catch(async () => {
-                const spokenQuery = capturedBrowserTranscript || 'Hello computer';
-                const fallback = await generateStandaloneQueryResponse(
-                  spokenQuery,
-                  historyRef.current,
-                  deviceInfo
-                );
-                return {
-                  ...fallback,
-                  userTranscript: capturedBrowserTranscript || '[VOICE]',
-                  isQuestion:
-                    /\b(what|who|where|when|why|how|tell|show|explain|ano|sino|saan|paano|bakit)\b/i.test(
-                      spokenQuery
-                    ) || spokenQuery.includes('?'),
-                };
-              });
+            const data = await postComputerApi<{
+              userTranscript?: string;
+              detectedUserName?: string | null;
+              extractedUserFact?: string | null;
+              isQuestion?: boolean;
+              spokenText?: string;
+              slides?: SlideSpec[];
+            }>('/api/voice-chat', {
+              audioBase64: base64Data,
+              mimeType: audioBlob.type || 'audio/webm',
+              history: historyRef.current,
+              deviceInfo,
+            }).catch(async () => {
+              const spokenQuery = capturedBrowserTranscript || 'Hello computer';
+              const fallback = await generateStandaloneQueryResponse(
+                spokenQuery,
+                historyRef.current,
+                deviceInfo
+              );
+              return {
+                ...fallback,
+                extractedUserFact: null,
+                userTranscript: capturedBrowserTranscript || '[VOICE]',
+                isQuestion:
+                  /\b(what|who|where|when|why|how|tell|show|explain|ano|sino|saan|paano|bakit)\b/i.test(
+                    spokenQuery
+                  ) || spokenQuery.includes('?'),
+              };
+            });
 
             if (actionEpochRef.current !== myEpoch || userDraftRef.current.length > 0) return;
 
@@ -1238,7 +1284,8 @@ export default function App() {
             recordModelOutputToProfile(
               fullSpokenText,
               userTranscript,
-              data.detectedUserName || null
+              data.detectedUserName || null,
+              data.extractedUserFact || null
             );
 
             const slidePromises = createDecodedSlidePromises(slides);
@@ -1691,20 +1738,16 @@ export default function App() {
           return;
         }
 
-        const queryData = await fetch('/api/query', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: trimmed,
-            history,
-            deviceInfo,
-          }),
-        })
-          .then(async (r) => {
-            if (!r.ok) throw new Error('Static host');
-            return await r.json();
-          })
-          .catch(() => generateStandaloneQueryResponse(trimmed, history, deviceInfo));
+        const queryData = await postComputerApi<{
+          detectedUserName?: string | null;
+          extractedUserFact?: string | null;
+          spokenText?: string;
+          slides?: SlideSpec[];
+        }>('/api/query', {
+          query: trimmed,
+          history,
+          deviceInfo,
+        }).catch(() => generateStandaloneQueryResponse(trimmed, history, deviceInfo));
 
         if (actionEpochRef.current !== myEpoch) {
           stopWaitingSound();
@@ -1721,7 +1764,8 @@ export default function App() {
         recordModelOutputToProfile(
           fullSpokenText,
           trimmed,
-          queryData.detectedUserName || null
+          queryData.detectedUserName || null,
+          'extractedUserFact' in queryData ? queryData.extractedUserFact || null : null
         );
 
         const slidePromises = createDecodedSlidePromises(slides);

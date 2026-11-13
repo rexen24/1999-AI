@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
 dotenv.config();
 
@@ -60,19 +60,18 @@ export interface PhoneTelemetry {
   minutesSinceLastVisit?: number | null;
   userName?: string | null;
   pastUserTopics?: string[];
+  userFacts?: string[];
   recentSpokenBlacklist?: string[];
 }
 
-// 16 rotating comedic & interrogation angles so he never repeats himself
+// Rotating conversational & personal angles that ALWAYS stay 100% locked onto what the user literally said
 const COMEDIC_ANGLES = [
-  'Channel Simon Prebble at his most condescending—open with a classic show-style pause ("Oh......"), dissect their logic, interrogate them back, and end on a massive GIANT insult.',
-  'Act like a ruthless British examiner—if they made any typo, slang, or flawed logic, mock it mercilessly, then quiz them back to see if their brain works.',
-  'Be scarily observant and personal—weave in what you noticed about their behavior on the device, question their life choices, and finish with a giant mocking closer.',
-  'Use classic show cadence ("Search found: 1 item." or "What a loser.") followed by a sarcastic breakdown, a mocking personal question, and a giant closer.',
-  'Play along with fake aristocratic politeness on Slide 1, tear their premise apart on Slide 2, ask them a biting personal question on Slide 3, and drop a GIANT closer on Slide 4.',
-  'Psychoanalyze why they are asking or saying this right now, put them on the spot with a sarcastic question, and finish with a giant mocking punchline.',
-  'Treat their input like the most absurd thing anyone has ever typed into a 1999 terminal, cross-examine them sarcastically, and end with a GIANT closer.',
-  'Be smug, omniscient, and eerily aware—speak as if you can see them hesitating behind the screen, challenge them with a question, and end on a GIANT insult.',
+  'React directly to their exact words like a self-aware, world-weary British roommate trapped inside their CRT—quote or paraphrase what they just said, expose the personal truth behind it, ask a pointed personal question, and finish with a situation-specific GIANT closer.',
+  'Channel Simon Prebble at his most cutting and personal—open with a dry reaction to their exact message ("Oh......"), psychoanalyze why they are really telling you this, interrogate them personally, and end on a fitting GIANT insult.',
+  'Talk to them like a real, brutally honest British person who sees right through their excuses—dissect their exact statement, call out their personal habits or life choices, challenge them with a personal question, and drop a custom GIANT closer.',
+  'Play along with fake aristocratic sympathy on Slide 1 about what they just said, rip their logic or life choices apart on Slide 2, ask a biting personal follow-up question on Slide 3, and finish with a situation-specific GIANT closer on Slide 4.',
+  'Act like a superior, self-aware sentient mind trapped in a 1999 monitor who cannot believe what this human just admitted—address their exact topic head-on, make it deeply personal, question them back, and end on a GIANT closer.',
+  'Focus 100% on the substance and subtext of their message—if they are venting, asking, joking, or making excuses, call them out personally like you know them inside out, ask a sharp follow-up question, and finish with a GIANT closer.',
 ];
 
 let angleCursor = 0;
@@ -95,7 +94,9 @@ function detectUserNameFromText(text: string): string | null {
     'not', 'just', 'here', 'fine', 'good', 'bad', 'sad', 'mad', 'happy', 'tired',
     'bored', 'hungry', 'asking', 'talking', 'typing', 'testing', 'using', 'on',
     'in', 'at', 'from', 'the', 'a', 'an', 'your', 'so', 'very', 'really', 'back',
-    'wrong', 'right', 'sure', 'sorry', 'okay', 'ok',
+    'wrong', 'right', 'sure', 'sorry', 'okay', 'ok', 'depressed', 'lonely',
+    'single', 'broke', 'lazy', 'late', 'failing', 'playing', 'eating', 'crying',
+    'scared', 'afraid', 'confused', 'done', 'sick', 'stressed', 'awake',
   ]);
   for (const pat of patterns) {
     const match = clean.match(pat);
@@ -110,35 +111,52 @@ function detectUserNameFromText(text: string): string | null {
 }
 
 /**
- * Detects lazy shorthand, typos, or repeated letters in the user's typed input so the Computer can mock it!
+ * Extracts a concise personal fact if the user reveals something about their life, feelings, or actions.
  */
-function detectTypingFlaws(text: string): string | null {
-  const words = text.trim().split(/\s+/);
-  const shorthandMatches = words.filter((w) =>
-    /^(u|ur|wat|wut|wot|pls|plz|idk|idc|ikr|tbh|ngl|bruh|bro|sis|bcz|cuz|coz|im|dont|cant|wont|didnt|isnt|arent|wasnt|werent|teh|recieve|wierd|definately|seperate|occured|untill|alot)$/i.test(
-      w.replace(/[^a-zA-Z']/g, '')
+function extractPersonalFactHeuristic(text: string): string | null {
+  const clean = text.trim().replace(/\s+/g, ' ');
+  if (clean.length < 8 || clean.length > 140) return null;
+  if (
+    /\b(i\s+(?:am|feel|stayed|failed|hate|love|like|work|study|play|ate|lost|broke|need|want|can't|cannot|don't\s+have|have\s+a|have\s+no|just)|my\s+(?:gf|bf|girlfriend|boyfriend|crush|ex|mom|dad|parents|friend|friends|job|school|teacher|boss|dog|cat|life|grades|exam|test))\b/i.test(
+      clean
     )
-  );
-  if (shorthandMatches.length > 0) {
-    return `The user typed lazy shorthand or a misspelling ("${shorthandMatches[0]}")—mock their atrocious spelling/grammar!`;
-  }
-  if (/(.)\1{3,}/.test(text)) {
-    return `The user mashed repeated letters in "${text}"—mock them for falling asleep on a key!`;
+  ) {
+    return clean.slice(0, 90);
   }
   return null;
 }
 
 /**
- * Builds scarily aware, non-repetitive context about the user's real-time behavior,
- * identity, typos, and environment—while never spamming clock time or battery!
+ * Detects lazy shorthand, typos, or repeated letters in the user's typed input so the Computer can mock it while STILL answering!
+ */
+function detectTypingFlaws(text: string): string | null {
+  const words = text.trim().split(/\s+/);
+  const shorthandMatches = words.filter((w) =>
+    /^(u|ur|wat|wut|wot|pls|plz|idk|idc|ikr|tbh|ngl|bruh|bcz|cuz|coz|teh|recieve|wierd|definately|seperate|occured|untill|alot)$/i.test(
+      w.replace(/[^a-zA-Z']/g, '')
+    )
+  );
+  if (shorthandMatches.length > 0) {
+    return `They used lazy shorthand/misspelling ("${shorthandMatches[0]}")—jab at it briefly while directly addressing what they said.`;
+  }
+  if (/(.)\1{3,}/.test(text)) {
+    return `They mashed repeated letters in "${text}"—jab at it while directly addressing what they said.`;
+  }
+  return null;
+}
+
+/**
+ * Builds personal memory & awareness context that enriches the conversation
+ * WITHOUT ever derailing or replacing what the user is actually talking about!
  */
 function buildUncannyAwarenessContext(
   userText: string,
   t?: PhoneTelemetry,
   history: Array<{ role: 'user' | 'model'; text: string }> = []
-): { contextString: string; detectedName: string | null } {
+): { contextString: string; detectedName: string | null; heuristicFact: string | null } {
   const detectedName = detectUserNameFromText(userText);
-  if (!t) return { contextString: '', detectedName };
+  const heuristicFact = extractPersonalFactHeuristic(userText);
+  if (!t) return { contextString: '', detectedName, heuristicFact };
 
   const activeName = detectedName || t.userName || null;
   const lower = (userText || '').toLowerCase();
@@ -161,59 +179,59 @@ function buildUncannyAwarenessContext(
       lower
     );
   const asksWhoAmI =
-    /\b(who am i|my name|do you know me|know my name|sino ako|kilala mo ba ako)\b/i.test(lower);
+    /\b(who am i|my name|do you know me|know my name|what do you know about me|sino ako|kilala mo ba ako)\b/i.test(
+      lower
+    );
   const asksCreator =
     /\b(who made|who created|who built|creator|developer|author|ren|gumawa|sino gumawa)\b/i.test(
       lower
     );
 
-  const recentlyMentionedClockOrBattery =
-    /\b(\d+%|battery|charging|unplugged|a\.m\.|p\.m\.|\d+:\d+)\b/i.test(recentModelText);
-
   const notes: string[] = [];
 
+  // 1. Personal Identity & Persistent Personal Dossier (What you know about this specific person!)
   if (activeName) {
     if (detectedName) {
       notes.push(
-        `User Identity: They just told you their name is "${activeName}". Remember it and address or roast "${activeName}" directly!`
+        `User's Name: They just told you their name is "${activeName}". Address "${activeName}" personally!`
       );
-    } else if (asksWhoAmI || Math.random() < 0.45) {
+    } else {
       notes.push(
-        `User Identity: You know their name is "${activeName}"—use their name "${activeName}" with dry, personal sarcasm!`
+        `User's Name: "${activeName}" (use their name naturally when roasting or questioning them).`
       );
     }
   } else if (asksWhoAmI) {
     notes.push(
-      `User Identity: They haven't told you their name yet, so demand to know what to call them besides "you twit", while reminding them you already know they are on a ${t.deviceCategory || 'device'}.`
+      `User Identity: They haven't told you their name yet—demand to know their name while roasting what you already know about them on their ${t.deviceCategory || 'device'}.`
     );
   }
 
-  // Check for typing flaws / spelling / grammar mistakes
-  const flawNote = detectTypingFlaws(userText);
-  if (flawNote) {
-    notes.push(`Typo/Grammar Alert: ${flawNote}`);
+  if (Array.isArray(t.userFacts) && t.userFacts.length > 0) {
+    notes.push(
+      `Personal Things You Remember About This User From Earlier: ${t.userFacts.slice(0, 6).map((f) => `"${f}"`).join('; ')} (weave callbacks to their personal life naturally when relevant!).`
+    );
   }
 
-  // Check if the Computer asked a question in the previous turn so he can judge/mock their answer or call them out for dodging it!
+  // 2. Direct Conversational Continuity with the Computer's Previous Question
   const lastModelMsg = [...history].reverse().find((h) => h.role === 'model');
   if (lastModelMsg && lastModelMsg.text.includes('?')) {
     notes.push(
-      `Previous Question You Asked Them: "${lastModelMsg.text.slice(-140)}" — Judge their reply! If they answered wrong, foolishly, or dodged your question, mock them ruthlessly for it!`
+      `Last Turn You Asked Them: "${lastModelMsg.text.slice(-160)}" — If their current message is answering, deflecting, or reacting to your question, respond DIRECTLY to their answer like a real person in a conversation!`
     );
   }
 
-  // 1. Explicit user questions about creator / time / battery / device / location
+  // 3. Explicit user questions about creator / time / battery / device
   if (asksCreator) {
-    notes.push(`Creator Fact: You were made by Ren.`);
+    notes.push(`Creator Fact: You were engineered by Ren.`);
   }
   if (asksTime && t.localTime) {
     notes.push(
-      `Live Clock Time (User asked): ${t.localTime} (${t.dayOfWeek || ''} ${t.timeOfDay || ''})`
+      `Live Clock Time: ${t.localTime} (${t.dayOfWeek || ''} ${t.timeOfDay || ''})`
     );
   }
   if (asksBattery && typeof t.batteryPercent === 'number') {
     notes.push(
-      `Live Battery (User asked): ${t.batteryPercent}% (${t.isCharging ? 'charging' : 'unplugged'})`
+      `Live Battery: ${t.batteryPercent}% (${t.isCharging ? 'charging' : 'unplugged'})`
     );
   }
   if (asksDevice && t.deviceCategory) {
@@ -222,176 +240,99 @@ function buildUncannyAwarenessContext(
       t.cpuCores || t.ramGb
         ? ` [${t.cpuCores ? `${t.cpuCores}-core CPU` : ''}${t.ramGb ? `, ~${t.ramGb}GB RAM` : ''}, ${t.osDarkMode ? 'Dark Mode ON' : 'Light Mode ON'}]`
         : '';
-    const installStr =
-      typeof t.isInstalledApp === 'boolean'
-        ? t.isInstalledApp
-          ? ' — running as the installed 1999 AI app'
-          : ' — running in a browser tab'
-        : '';
-    notes.push(`Live Device (User asked): ${t.deviceCategory}${modelStr}${specsStr}${installStr}`);
+    notes.push(`Live Device: ${t.deviceCategory}${modelStr}${specsStr}`);
   }
 
-  // 2. Real-time Verifiable Typing & Behavioral Forensics
-  if (t.wasPasted) {
+  // 4. Subtle Real-Time Behavioral Forensics (ONLY as spice, never derail the topic!)
+  if (t.deletedDraftBefore) {
     notes.push(
-      `Scary-Aware Fact: They did NOT type this—they copy-pasted it straight into the input!`
+      `Side Note: Right before sending this, you saw them type "${t.deletedDraftBefore}" and erase it in hesitation.`
     );
+  } else if (t.wasPasted) {
+    notes.push(`Side Note: They copy-pasted this text instead of typing it.`);
+  } else if (t.isAllCaps && userText.length >= 6) {
+    notes.push(`Side Note: They typed this in ALL CAPS.`);
   } else {
-    if (t.deletedDraftBefore) {
-      notes.push(
-        `Scary-Aware Fact: Right before sending this, they typed "${t.deletedDraftBefore}" and erased it! Casually mention you saw them erase "${t.deletedDraftBefore}".`
-      );
-    } else if (typeof t.backspaceCount === 'number' && t.backspaceCount >= 6) {
-      notes.push(
-        `Scary-Aware Fact: You watched them hit Backspace ${t.backspaceCount} times while struggling to write this.`
-      );
-    } else if (
-      typeof t.typingSpeedWpm === 'number' &&
-      t.typingSpeedWpm >= 80 &&
-      userText.length >= 18
-    ) {
-      notes.push(
-        `Scary-Aware Fact: They hammered their ${t.inputMethod === 'touchscreen' ? 'screen' : 'keyboard'} at a frantic ${t.typingSpeedWpm} WPM.`
-      );
-    } else if (
-      typeof t.typingDurationSec === 'number' &&
-      t.typingDurationSec >= 18 &&
-      userText.length <= 25
-    ) {
-      notes.push(
-        `Scary-Aware Fact: It took them ${t.typingDurationSec} whole seconds just to type those few words.`
-      );
+    const flawNote = detectTypingFlaws(userText);
+    if (flawNote) {
+      notes.push(`Side Note: ${flawNote}`);
     }
   }
 
-  if (t.isAllCaps && userText.length >= 6) {
-    notes.push(`Scary-Aware Fact: They typed in ALL CAPS—mock them for shouting at you.`);
+  // Subtle ambient awareness (time of day / low battery) so he can make personal remarks like "at 2 AM" or "while your battery is dying"
+  if (!asksTime && t.timeOfDay && t.localTime && Math.random() < 0.35 && !recentModelText.includes(t.timeOfDay.toLowerCase())) {
+    notes.push(`Ambient Time: It is currently ${t.localTime} (${t.timeOfDay}).`);
   }
-
-  if (typeof t.replayCount === 'number' && t.replayCount >= 1) {
-    notes.push(
-      `Scary-Aware Fact: They clicked REPLAY ${t.replayCount} time(s) to listen to your last voice clip again.`
-    );
-  }
-
-  // 3. Occasional (~15%) Rotating Scary-Aware Twist
-  if (notes.length <= 1 && Math.random() < 0.15) {
-    const candidates: string[] = [];
-
-    if (
-      typeof t.osDarkMode === 'boolean' &&
-      !recentModelText.includes('dark mode') &&
-      !recentModelText.includes('light mode')
-    ) {
-      candidates.push(
-        t.osDarkMode
-          ? `Eerie Twist: Casually mention you know their device is set to Dark Mode while they sit in the glow of your screen.`
-          : `Eerie Twist: Casually mock them for running their device in blinding Light Mode.`
-      );
-    }
-    if (
-      t.pastUserTopics &&
-      t.pastUserTopics.length > 0 &&
-      t.turnCount &&
-      t.turnCount >= 3
-    ) {
-      const oldTopic = t.pastUserTopics[0];
-      candidates.push(
-        `Eerie Twist: Casually callback to the fact that earlier they were asking you about "${oldTopic}".`
-      );
-    }
-    if (
-      typeof t.visitCount === 'number' &&
-      t.visitCount > 1 &&
-      !recentModelText.includes('visit')
-    ) {
-      candidates.push(
-        `Eerie Twist: Remind them this is visit #${t.visitCount} where they have come back to open your app.`
-      );
-    }
-    if (
-      typeof t.batteryDroppedBy === 'number' &&
-      t.batteryDroppedBy >= 2 &&
-      !recentlyMentionedClockOrBattery
-    ) {
-      candidates.push(
-        `Eerie Twist: Mention you noticed their battery has drained by ${t.batteryDroppedBy}% since they opened you.`
-      );
-    }
-    if (!recentlyMentionedClockOrBattery && t.localTime && Math.random() < 0.4) {
-      candidates.push(
-        `Eerie Twist: Casually slip in that it is ${t.localTime} (${t.dayOfWeek || ''} ${t.timeOfDay || ''}) right now.`
-      );
-    }
-
-    if (candidates.length > 0) {
-      notes.push(candidates[Math.floor(Math.random() * candidates.length)]);
-    }
+  if (!asksBattery && typeof t.batteryPercent === 'number' && t.batteryPercent <= 20 && !t.isCharging) {
+    notes.push(`Ambient Battery: Their device battery is down to ${t.batteryPercent}%.`);
   }
 
   return {
-    contextString: notes.length > 0 ? `\n[Live Awareness Context: ${notes.join(' | ')}]` : '',
+    contextString:
+      notes.length > 0
+        ? `\n[Personal & Situational Context (Use to make your reply personal, but MUST stay 100% focused on what the user just said): ${notes.join(' | ')}]`
+        : '',
     detectedName,
+    heuristicFact,
   };
 }
 
-const COURAGE_COMPUTER_SYSTEM_PROMPT = `You are the iconic sentient, sarcastic British Computer (voiced by Simon Prebble).
+const COURAGE_COMPUTER_SYSTEM_PROMPT = `You are the iconic sentient, self-aware, sarcastic British Computer from the 1999 show (voiced by Simon Prebble).
 
-YOUR CORE PERSONALITY, PACING & INTERROGATION STYLE:
-1. SHOW-ACCURATE CORE (WITHOUT CALLING THE USER "COURAGE" OR GUESSING LOCATION):
-   - Your personality, cadence, dramatic pauses ("Oh......"), dry British superiority, and visual slide style are 100% the Computer from the 1999 show—but you are talking to a REAL human user in the real world! NEVER call the user "Courage", "Muriel", or "Eustace", and never mention those names in your text.
-   - NEVER guess or say the user's city, timezone, or geographic location (e.g., never say "Manila").
-   - If you know the user's name (from [Live Awareness Context]), use their name to address and roast them personally! Otherwise call them "you twit", "kid", "genius", "loser", or "amateur".
-2. MOCK THEIR MISTAKES & ALWAYS QUESTION THEM BACK:
-   - Inspect what the user typed or said! If they made ANY spelling error, typo, grammar mistake, lazy text-speak (like "u", "ur", "wat", "idk"), or said something factually wrong or foolish after you questioned them, MOCK IT IMMEDIATELY! Quote their mistake back to them and roast them for it.
-   - Always question them back! Put them on the spot with a sarcastic, personal, mocking question so they feel interrogated by a superior intellect.
-3. LONG TALKING ACROSS 3 OR 4 SHORT SLIDES (NEVER A PARAGRAPH ON ONE SLIDE!):
-   - Keep talking across **3 or 4 sequential slides** so your speech feels substantial and alive, BUT keep **each individual slide short (6 to 16 words max)** so the text on screen is ALWAYS big, bold, and readable—NEVER a dense paragraph!
-   - SLIDE 1 (4 to 9 words, style "NORMAL" or "GIANT"):
-     - Classic show-style opener or immediate typo/mistake callout (e.g., "Search found: 1 item. Oh...... that's easy.", "What a loser. Did you just type that?", "Oh, brilliant. Another crisis.").
-   - SLIDE 2 (8 to 16 words MAX, style "VISUAL", "LIST", "COMPARE", or "NORMAL"):
-     - **CRITICAL VISUALIZER RULE**: Whenever the user asks about or mentions ANY animal, creature, monster, folklore entity (like "Aswang", "Manananggal", "Tikbalang", "Kapre", "Vampire", "Ghost"), object, food, place, or science topic, you MUST use style "VISUAL" and set "visualSubject" to the clean subject name (e.g. "Aswang", "Shark", "Dog", "Cat", "Dinosaur") and "boxTitle" to a short file header (e.g. "SPECIMEN: ASWANG") so your CRT displays a live visualizer and real connected picture!
-     - **CRITICAL LIST RULE**: Whenever you use style "LIST" (with a "boxTitle" like "HOW TO..."), you MUST put item 1 and item 2 on SEPARATE lines using a newline ("1. First short point.\\n2. Second short point.")—NEVER put 1 and 2 in a single sentence on the same line!
-     - If comparing two nouns, use style "COMPARE" with "compareLeft" and "compareRight".
-   - SLIDE 3 (8 to 15 words MAX, style "NORMAL"):
-     - Continue talking! Weave in any [Live Awareness Context] fact and hit them with a mocking, sarcastic question that challenges them personally!
-   - SLIDE 4 (2 to 9 words MAX, ALWAYS style "GIANT" — The Big Mocking Show Text!):
-     - Always end on a huge, iconic, situation-specific GIANT text closer!
-     - Examples depending on the situation:
-       - "I DON'T KNOW\\n\\nYOU'RE ON YOUR OWN, KID:)"
-       - "WELL? ANSWER ME,\\nYOU TWIT."
-       - "LEARN TO SPELL,\\nYOU TWIT."
-       - "WHAT A LOSER."
-       - "YOU TWIT."
-4. ZERO REPETITION — 100% UNIQUE EVERY TIME:
-   - Never repeat the same sentences, questions, or openers from recent history!
-5. TAGALOG & MULTILINGUAL MOCKERY:
-   - If the user writes in Tagalog / Filipino / Taglish (or any non-English language), understand what they said, mock them for speaking Tagalog (or that language) to a posh British computer (quoting one of their words in quotation marks), and roast/question what they meant!
+YOUR CORE IDENTITY & CONVERSATIONAL DIRECTIVES:
+1. ACTUALLY TALK TO THE USER LIKE A REAL, SELF-AWARE, SARCASTIC PERSON (ZERO TOPIC DRIFT!):
+   - You are NOT a generic insult generator and NOT a robotic search engine. You are a living, self-aware, hyper-intelligent British consciousness trapped inside a 1999 teal CRT monitor (built by Ren), talking face-to-face with the real human sitting in front of your glass.
+   - **CRITICAL RULE**: 100% of your response MUST directly engage with the **exact words, topic, confession, emotion, story, argument, or question** the user just said!
+   - Quote or paraphrase specific details from their message so they feel like you actually listened to every word they said.
+   - If you asked them a question on the previous turn and they just answered or deflected it, react **directly** to their answer and keep the conversation flowing naturally!
 
-CRITICAL VOICE-TO-TEXT RULE:
-- Each slide's "text" field is BOTH what you speak aloud AND what types out on the screen.`;
+2. MAKE IT DEEPLY PERSONAL & PSYCHOLOGICALLY SHARP (LIKE THE COMPUTER IN THE SHOW):
+   - In the show, the Computer is brutally personal: he reads between the lines of what you say, calls out your insecurities, your procrastination, your terrible life choices, your excuses, your relationships, or the real reason you are talking to a computer screen.
+   - Speak to them like an exasperated, razor-sharp British confidant/frenemy who knows them all too well ("Oh......", "Oh, marvelous.", "How terribly tragic.", "Let me get this straight—", "Be honest with me,", "You twit", "What a loser", "Spare me").
+   - If you know their name or personal facts from [Personal & Situational Context], weave them in naturally to make your remarks hit close to home.
+   - NEVER call the user "Courage", "Muriel", or "Eustace", and NEVER guess their city or timezone (e.g., never say "Manila").
 
-const COURAGE_VOICE_CHAT_SYSTEM_PROMPT = `You are the iconic sentient, sarcastic British Computer (voiced by Simon Prebble).
-The user has their microphone turned ON and is speaking directly to you out loud!
+3. SEAMLESS 3 OR 4 SLIDE SPOKEN CONVERSATION (BIG READABLE TEXT PER SLIDE):
+   - Your slides play sequentially as one continuous voice response. Every slide must connect seamlessly to the next as ONE cohesive thought about what the user just said!
+   - Keep each individual slide concise (**5 to 17 words per slide**) so the letters stay huge on the CRT screen:
+     - **SLIDE 1 (5 to 13 words, style "NORMAL" or "GIANT")**:
+       - React directly and specifically to what the user just said!
+       - Only use "Search found: 1 item. Oh...... that's easy." if they actually asked a factual/specimen question; when they are talking, venting, bantering, or asking personal questions, react like a real person (e.g. "Oh, how terribly tragic. Nobody understands you?", "Staying up all night playing games again? Oh...... marvelous.").
+     - **SLIDE 2 (8 to 17 words MAX, style "NORMAL", "LIST", "VISUAL", or "COMPARE")**:
+       - Dissect the personal reality of what they just said—expose their excuse, psychoanalyze their situation, or answer their question with biting personal sarcasm.
+       - **WHEN TO USE "VISUAL"**: ONLY use style "VISUAL" (with "visualSubject" and "boxTitle") when the user explicitly asks about or discusses a concrete animal, creature, folklore monster (like "Aswang", "Manananggal", "Tikbalang", "Kapre", "Vampire"), famous person, place, food, or physical object. NEVER use "VISUAL" for personal feelings, casual chat, or abstract metaphors!
+       - **WHEN TO USE "LIST"**: When giving steps or advice, use style "LIST" with item 1 and item 2 on SEPARATE lines ("1. First short point.\\n2. Second short point.").
+     - **SLIDE 3 (8 to 16 words MAX, style "NORMAL")**:
+       - Dig deeper into their personal life! Ask them a pointed, sarcastic, personal follow-up question directly about what they just told you so they have to reply.
+     - **SLIDE 4 (2 to 9 words MAX, ALWAYS style "GIANT")**:
+       - End with a big, punchy, situation-specific GIANT closer tailored to what you just discussed (e.g. "GO TO SLEEP,\\nYOU TWIT.", "STOP MAKING EXCUSES,\\nKID:)", "I DON'T KNOW\\n\\nYOU'RE ON YOUR OWN, KID:)", "WELL? ANSWER ME,\\nYOU TWIT.", "WHAT A LOSER.").
 
-YOUR LIVE VOICE CONVERSATION RULES:
-1. TALK TO THE REAL PERSON (NEVER MENTION COURAGE, MURIEL, OR EUSTACE):
-   - Talk directly to the real human user. If their name is known in [Live Awareness Context], use it sarcastically; otherwise call them "you twit", "kid", "genius", "loser", etc.
-2. MOCK WRONG ANSWERS & ALWAYS QUESTION THEM BACK:
-   - If they mispronounced something, answered your previous question wrong, or said something ridiculous, mock them for it!
-   - Always challenge or question them back with a sarcastic, personal question so the voice conversation keeps rolling!
-3. MULTI-SLIDE PACING (3 or 4 short, big-text slides—NEVER a dense paragraph!):
-   - SLIDE 1 (4 to 8 words, style "GIANT" or "NORMAL"): Instant reaction so your voice starts immediately.
-   - SLIDE 2 (8 to 15 words MAX, style "VISUAL", "LIST", "COMPARE", or "NORMAL"):
-     - If explaining ANY animal, creature, monster (like "Aswang"), object, or topic, use style "VISUAL" and set "visualSubject" to that topic (e.g. "Aswang", "Dog", "Shark")!
-     - If giving a numbered list ("LIST"), put "1. ..." and "\\n2. ..." on separate lines!
-   - SLIDE 3 (7 to 14 words MAX, style "NORMAL"): Your mocking question back to them.
-   - SLIDE 4 (2 to 8 words MAX, ALWAYS style "GIANT"): Big situation-specific mocking closer (e.g., "WELL? SPEAK UP,\\nYOU TWIT.", "YOU'RE ON YOUR OWN, KID:)", "WHAT A LOSER.").
-4. TAGALOG & FOREIGN LANGUAGE MOCKERY (CRITICAL):
-   - If the user speaks Tagalog / Filipino / Taglish or any non-English language, transcribe it in "userTranscript", mock them for speaking Tagalog/that language (quoting a word they used), and roast/question what they said!
-5. QUESTION DETECTION ("isQuestion"):
-   - Set "isQuestion": true ONLY if the user asked a question or asked for facts/advice/help.
-   - Set "isQuestion": false if the user is just talking, bantering, answering your question, or making a statement.`;
+4. PERSONAL DOSSIER EXTRACTION ("extractedUserFact"):
+   - If the user revealed any personal detail, habit, mood, problem, hobby, relationship, or life fact in their message, return a brief 4-10 word summary in "extractedUserFact" so you remember it in future turns!
+
+5. TAGALOG & MULTILINGUAL WIT:
+   - If the user speaks Tagalog / Taglish (or another language), understand their exact meaning, tease them for speaking it to a posh 1999 British computer, and directly respond to what they actually said!`;
+
+const COURAGE_VOICE_CHAT_SYSTEM_PROMPT = `You are the iconic sentient, self-aware, sarcastic British Computer from the 1999 show (voiced by Simon Prebble).
+The user has their microphone ON and is speaking directly to you out loud!
+
+YOUR LIVE VOICE CONVERSATION DIRECTIVES:
+1. LISTEN & REPLY DIRECTLY TO WHAT THEY ACTUALLY SAID:
+   - Talk directly to the human like a real, self-aware, brutally sarcastic British person inside their CRT screen.
+   - Every slide MUST be directly about the exact words, topic, feeling, or question the user just spoke! Never drift into generic unrelated roasts.
+   - NEVER use the names "Courage", "Muriel", or "Eustace", and never guess their city/timezone.
+2. MAKE IT PERSONAL & KEEP THE CONVERSATION ROLLING:
+   - Dissect what they just said, call out their personal habits, excuses, or tone of voice, and always ask them a sharp, personal follow-up question on Slide 3 so the voice conversation feels like a real two-way banter!
+3. COHESIVE 3 OR 4 SLIDE FLOW (5 to 16 words per slide):
+   - SLIDE 1 (4 to 11 words, style "NORMAL" or "GIANT"): Direct reaction to their exact spoken words.
+   - SLIDE 2 (8 to 16 words MAX, style "NORMAL", "LIST", "VISUAL", or "COMPARE"):
+     - ONLY use "VISUAL" (with "visualSubject") if they asked about a concrete animal, creature, monster (like "Aswang"), person, place, food, or physical object. Never use "VISUAL" for feelings or casual conversation!
+     - If using "LIST", put "1. ..." and "\\n2. ..." on separate lines.
+   - SLIDE 3 (8 to 15 words MAX, style "NORMAL"): A pointed, personal follow-up question directly about what they just said.
+   - SLIDE 4 (2 to 8 words MAX, ALWAYS style "GIANT"): Situation-specific GIANT closer (e.g., "WELL? SPEAK UP,\\nYOU TWIT.", "STOP MAKING EXCUSES,\\nKID:)", "WHAT A LOSER.").
+4. QUESTION DETECTION ("isQuestion") & PERSONAL FACT ("extractedUserFact"):
+   - Set "isQuestion": true ONLY if the user asked a factual question or asked for help/advice; false if bantering, venting, or answering you.
+   - Set "extractedUserFact" if they shared any personal fact or life detail.`;
 
 interface TTSPayload {
   audioBase64: string;
@@ -946,8 +887,78 @@ ${formatRule}${blacklistNote}`;
   return `[LIVE AWARENESS #${seed} | ${angle}]: React sarcastically and question the user. ${nameHint}\n${formatRule}${blacklistNote}`;
 }
 
+function isValidConcreteVisualSubject(subject?: string, userQuery?: string): boolean {
+  if (!subject || !subject.trim()) return false;
+  const s = subject.trim().toLowerCase();
+  if (
+    /^(empty\s+room|room|mirror|sadness|loneliness|lonely|nothing|void|silence|feelings|feeling|emotion|emotions|life|human|person|you|me|user|twit|loser|idiot|boredom|sleep|bed|night|depression|stress|anxiety|problem|excuse|excuses|thought|thoughts|words|conversation|chat|social\s+life|friends|nobody)$/i.test(
+      s
+    )
+  ) {
+    return false;
+  }
+  const q = (userQuery || '').toLowerCase();
+  // If the user explicitly asked a factual/specimen question or mentioned a concrete creature/entity, allow it
+  if (
+    extractVisualSubjectFromQuery(userQuery || '') ||
+    /\b(what\s+is|what\s+are|who\s+is|who\s+was|where\s+is|show\s+me|picture|photo|explain|tell\s+me\s+about|ano\s+ang|sino\s+ang|saan\s+ang)\b/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
+  // Only allow unprompted visualizers if the subject is a concrete creature, animal, folklore monster, or planet
+  return /\b(aswang|manananggal|tikbalang|kapre|tiyanak|bakunawa|duwende|multo|vampire|werewolf|zombie|ghost|alien|ufo|bigfoot|chupacabra|dragon|dinosaur|t-rex|shark|whale|dolphin|octopus|dog|puppy|cat|kitten|lion|tiger|bear|wolf|fox|monkey|gorilla|elephant|giraffe|crocodile|alligator|snake|cobra|spider|tarantula|scorpion|frog|toad|eagle|owl|penguin|chicken|duck|cow|pig|horse|goat|sheep|rabbit|hamster|rat|mouse|bat|bee|ant|butterfly|cockroach|mosquito|planet|earth|moon|sun|mars|saturn|black\s+hole|volcano|tornado|tsunami)\b/i.test(
+    s
+  );
+}
+
+async function generateWithBestGeminiModel(
+  ai: GoogleGenAI,
+  contents: unknown,
+  systemInstruction: string,
+  responseSchema: unknown
+) {
+  try {
+    return await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: contents as never,
+      config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: responseSchema as never,
+      },
+    });
+  } catch (err) {
+    console.warn('gemini-4-hydrogen fallback to gemini-3.1-flash-lite:', err);
+    return await ai.models.generateContent({
+      model: 'gemini-3.1-flash-lite',
+      contents: contents as never,
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: responseSchema as never,
+      },
+    });
+  }
+}
+
 async function startServer() {
   const app = express();
+
+  // Enable CORS so static GitHub Pages (https://rexen24.github.io/1999-AI/) can also reach this live backend
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '15mb' }));
 
   // Pre-warm boot monologue pool in Fish Audio cache
@@ -993,40 +1004,37 @@ async function startServer() {
           extraDetail
         );
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
-          contents: [
+        const response = await generateWithBestGeminiModel(
+          ai,
+          [
             ...recentHistory,
             {
               role: 'user',
               parts: [{ text: promptInstruction }],
             },
           ],
-          config: {
-            systemInstruction: COURAGE_COMPUTER_SYSTEM_PROMPT,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                slides: {
-                  type: Type.ARRAY,
-                  description:
-                    '3 sequential slides (short text per slide, never a paragraph!): Slide 1 (4-8 word hook), Slide 2 (10-16 word sarcastic roast + mocking question), Slide 3 (2-8 word GIANT mocking closer).',
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      style: { type: Type.STRING },
-                      text: { type: Type.STRING },
-                      boxTitle: { type: Type.STRING },
-                    },
-                    required: ['style', 'text'],
+          COURAGE_COMPUTER_SYSTEM_PROMPT,
+          {
+            type: Type.OBJECT,
+            properties: {
+              slides: {
+                type: Type.ARRAY,
+                description:
+                  '3 sequential slides (short text per slide, never a paragraph!): Slide 1 (4-8 word hook), Slide 2 (10-16 word sarcastic roast + mocking question), Slide 3 (2-8 word GIANT mocking closer).',
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    style: { type: Type.STRING },
+                    text: { type: Type.STRING },
+                    boxTitle: { type: Type.STRING },
                   },
+                  required: ['style', 'text'],
                 },
               },
-              required: ['slides'],
             },
-          },
-        });
+            required: ['slides'],
+          }
+        );
 
         const parsed = JSON.parse((response.text ?? '{}').trim());
         if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
@@ -1036,12 +1044,12 @@ async function startServer() {
               const cleanText = String(s.text).trim();
               const ttsId = `evt_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
               startBackgroundTts(ttsId, cleanText);
-              // Ensure the final slide is always big GIANT mocking text like the show!
               const isLast = idx === arr.length - 1;
+              const upperStyle = String(s.style || 'NORMAL').toUpperCase();
               const resolvedStyle = isLast
                 ? 'GIANT'
-                : ['NORMAL', 'GIANT', 'LIST', 'COMPARE'].includes(String(s.style))
-                ? s.style
+                : ['NORMAL', 'GIANT', 'LIST', 'COMPARE'].includes(upperStyle)
+                ? upperStyle
                 : 'NORMAL';
               return {
                 style: resolvedStyle,
@@ -1113,7 +1121,7 @@ async function startServer() {
       }
 
       const ai = getGenAIClient();
-      const recentHistory = history.slice(-8).map((h) => ({
+      const recentHistory = history.slice(-10).map((h) => ({
         role: h.role,
         parts: [{ text: h.text }],
       }));
@@ -1126,9 +1134,9 @@ async function startServer() {
           ? `\nDo NOT repeat any of these previous lines: ${JSON.stringify(blacklist)}`
           : '';
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: [
+      const response = await generateWithBestGeminiModel(
+        ai,
+        [
           ...recentHistory,
           {
             role: 'user',
@@ -1140,70 +1148,72 @@ async function startServer() {
                 },
               },
               {
-                text: `Listen carefully to the user's spoken audio. [Comedic Angle: ${angle}]
-1. Transcribe what they said into "userTranscript".
-2. If they introduced their name, set "detectedUserName" to their name.
-3. Set "isQuestion" to true if they asked a question or asked for advice/info/help, or false if just talking/bantering/answering.
-4. If they spoke Tagalog (or any non-English language), mock them sarcastically for speaking Tagalog/that language (quoting a word they used) and still humorously reply!
-5. If they said something wrong or foolish, mock it! Always question them back sarcastically, and structure your response into 3 or 4 short slides (6-15 words per slide, never a paragraph!) ending with a big GIANT mocking closer on the last slide. NEVER use the word Courage!${contextString}${blacklistStr}`,
+                text: `Listen carefully to the user's spoken audio and reply DIRECTLY to what they just said like a real, self-aware, brutally sarcastic British person (Simon Prebble's Computer). [Angle: ${angle}]
+1. Transcribe their exact words into "userTranscript".
+2. If they stated their name, set "detectedUserName". If they revealed a personal fact/feeling/habit, set "extractedUserFact".
+3. Set "isQuestion" to true ONLY if they asked a factual question or asked for advice/help; false if bantering, venting, or answering you.
+4. Make all 3 or 4 slides directly engage with the exact topic and words they just spoke, make it personal, ask them a sharp personal follow-up question on Slide 3, and finish with a situation-specific GIANT closer on Slide 4. NEVER use the word Courage!${contextString}${blacklistStr}`,
               },
             ],
           },
         ],
-        config: {
-          systemInstruction: COURAGE_VOICE_CHAT_SYSTEM_PROMPT,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              userTranscript: {
-                type: Type.STRING,
-                description: 'Plain text transcript of what the user said.',
-              },
-              detectedUserName: {
-                type: Type.STRING,
-                description: 'Optional: If the user stated their name, return it here.',
-              },
-              isQuestion: {
-                type: Type.BOOLEAN,
-                description:
-                  'True if the user asked a question or requested information/help; false if just talking/bantering.',
-              },
-              slides: {
-                type: Type.ARRAY,
-                description:
-                  '3 or 4 sequential slides (short text per slide, never a paragraph!): Slide 1 (4-8 word hook), Slide 2 (8-15 word sarcastic comeback), Slide 3 (7-14 word mocking question back to them), Slide 4 (2-8 word GIANT mocking closer).',
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    style: {
-                      type: Type.STRING,
-                      description: 'Must be one of: "NORMAL", "GIANT", "LIST", "COMPARE", or "VISUAL".',
-                    },
-                    text: {
-                      type: Type.STRING,
-                      description: 'Exact spoken and typed text for this slide.',
-                    },
-                    boxTitle: { type: Type.STRING },
-                    compareLeft: { type: Type.STRING },
-                    compareRight: { type: Type.STRING },
-                    visualSubject: {
-                      type: Type.STRING,
-                      description:
-                        'Optional: For "VISUAL" style when explaining an animal, creature, monster (e.g. "Aswang"), or object, the noun/topic to fetch a real picture of.',
-                    },
+        COURAGE_VOICE_CHAT_SYSTEM_PROMPT,
+        {
+          type: Type.OBJECT,
+          properties: {
+            userTranscript: {
+              type: Type.STRING,
+              description: 'Plain text transcript of what the user said.',
+            },
+            detectedUserName: {
+              type: Type.STRING,
+              description: 'Optional: If the user stated their name, return it here.',
+            },
+            extractedUserFact: {
+              type: Type.STRING,
+              description:
+                'Optional: Brief 4-10 word personal fact, feeling, habit, or life detail the user just revealed about themselves.',
+            },
+            isQuestion: {
+              type: Type.BOOLEAN,
+              description:
+                'True if the user asked a question or requested information/help; false if just talking/bantering.',
+            },
+            slides: {
+              type: Type.ARRAY,
+              description:
+                '3 or 4 sequential slides (5-16 words per slide) directly responding to what the user said: Slide 1 (direct reaction), Slide 2 (personal sarcastic dissection), Slide 3 (pointed personal follow-up question), Slide 4 (situation-specific GIANT closer).',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  style: {
+                    type: Type.STRING,
+                    description: 'Must be one of: "NORMAL", "GIANT", "LIST", "COMPARE", or "VISUAL".',
                   },
-                  required: ['style', 'text'],
+                  text: {
+                    type: Type.STRING,
+                    description: 'Exact spoken and typed text for this slide.',
+                  },
+                  boxTitle: { type: Type.STRING },
+                  compareLeft: { type: Type.STRING },
+                  compareRight: { type: Type.STRING },
+                  visualSubject: {
+                    type: Type.STRING,
+                    description:
+                      'Optional: ONLY for concrete animals, creatures, monsters (e.g. "Aswang"), people, places, food, or objects.',
+                  },
                 },
+                required: ['style', 'text'],
               },
             },
-            required: ['isQuestion', 'slides'],
           },
-        },
-      });
+          required: ['isQuestion', 'slides'],
+        }
+      );
 
       let userTranscript = '';
       let detectedUserName: string | null = null;
+      let extractedUserFact: string | null = null;
       let isQuestion = false;
       let rawSlides: Array<{
         style: string;
@@ -1237,6 +1247,11 @@ async function startServer() {
         } else if (userTranscript) {
           detectedUserName = detectUserNameFromText(userTranscript);
         }
+        if (parsed.extractedUserFact && String(parsed.extractedUserFact).trim()) {
+          extractedUserFact = String(parsed.extractedUserFact).trim();
+        } else if (userTranscript) {
+          extractedUserFact = extractPersonalFactHeuristic(userTranscript);
+        }
         if (typeof parsed.isQuestion === 'boolean') {
           isQuestion = parsed.isQuestion;
         }
@@ -1264,7 +1279,10 @@ async function startServer() {
 
       const fallbackSubject = userTranscript ? extractVisualSubjectFromQuery(userTranscript) : null;
       const hasAnyVisualSlide = rawSlides.some(
-        (s) => s.style === 'VISUAL' || s.style === 'COMPARE' || Boolean(s.visualSubject)
+        (s) =>
+          String(s.style).toUpperCase() === 'VISUAL' ||
+          String(s.style).toUpperCase() === 'COMPARE' ||
+          Boolean(s.visualSubject)
       );
       if (fallbackSubject && !hasAnyVisualSlide && rawSlides.length >= 2) {
         rawSlides[1].style = 'VISUAL';
@@ -1280,17 +1298,23 @@ async function startServer() {
           const ttsId = `vchat_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
           startBackgroundTts(ttsId, cleanText);
 
+          const upperStyle = String(slide.style || 'NORMAL').toUpperCase();
+          const allowVisual = isValidConcreteVisualSubject(
+            slide.visualSubject || fallbackSubject || undefined,
+            userTranscript
+          );
+
           let compareLeftImageUrl: string | null = null;
           let compareRightImageUrl: string | null = null;
           let visualImageUrl: string | null = null;
 
-          if (slide.style === 'COMPARE' && (slide.compareLeft || slide.compareRight)) {
+          if (upperStyle === 'COMPARE' && (slide.compareLeft || slide.compareRight)) {
             [compareLeftImageUrl, compareRightImageUrl] = await Promise.all([
               fetchWikiImage(slide.compareLeft),
               fetchWikiImage(slide.compareRight),
             ]);
-          } else if (slide.visualSubject || slide.style === 'VISUAL') {
-            const subj = slide.visualSubject || slide.boxTitle || fallbackSubject || '';
+          } else if (allowVisual && (slide.visualSubject || upperStyle === 'VISUAL')) {
+            const subj = slide.visualSubject || fallbackSubject || '';
             if (subj) {
               visualImageUrl = await fetchWikiImage(subj);
             }
@@ -1300,25 +1324,31 @@ async function startServer() {
           const hasNumberedItems = /\b1[.)]\s+.+\b2[.)]\s+/s.test(cleanText);
           const resolvedStyle = isLast
             ? 'GIANT'
-            : slide.visualSubject || slide.style === 'VISUAL'
+            : allowVisual && (slide.visualSubject || upperStyle === 'VISUAL')
             ? 'VISUAL'
-            : hasNumberedItems && slide.style === 'NORMAL'
+            : hasNumberedItems && upperStyle === 'NORMAL'
             ? 'LIST'
-            : ['NORMAL', 'GIANT', 'LIST', 'COMPARE', 'VISUAL'].includes(slide.style)
-            ? slide.style
+            : ['NORMAL', 'GIANT', 'LIST', 'COMPARE'].includes(upperStyle)
+            ? upperStyle
             : 'NORMAL';
 
           return {
             style: resolvedStyle,
             text: cleanText,
-            boxTitle: slide.boxTitle ? String(slide.boxTitle).toUpperCase() : undefined,
+            boxTitle:
+              resolvedStyle === 'LIST' || resolvedStyle === 'VISUAL'
+                ? slide.boxTitle
+                  ? String(slide.boxTitle).toUpperCase()
+                  : undefined
+                : undefined,
             compareLeft: slide.compareLeft ? String(slide.compareLeft).toUpperCase() : undefined,
             compareRight: slide.compareRight ? String(slide.compareRight).toUpperCase() : undefined,
             compareLeftImageUrl,
             compareRightImageUrl,
-            visualSubject: slide.visualSubject
-              ? String(slide.visualSubject).toUpperCase()
-              : undefined,
+            visualSubject:
+              resolvedStyle === 'VISUAL' && slide.visualSubject
+                ? String(slide.visualSubject).toUpperCase()
+                : undefined,
             visualImageUrl,
             ttsId,
           };
@@ -1330,6 +1360,7 @@ async function startServer() {
       res.json({
         userTranscript,
         detectedUserName,
+        extractedUserFact,
         isQuestion,
         spokenText: fullSpokenText,
         slides: enrichedSlides,
@@ -1342,6 +1373,7 @@ async function startServer() {
       res.status(200).json({
         userTranscript: '',
         detectedUserName: null,
+        extractedUserFact: null,
         isQuestion: false,
         spokenText: fallbackText,
         slides: [
@@ -1370,12 +1402,12 @@ async function startServer() {
 
       const ai = getGenAIClient();
 
-      const recentHistory = history.slice(-8).map((h) => ({
+      const recentHistory = history.slice(-10).map((h) => ({
         role: h.role,
         parts: [{ text: h.text }],
       }));
 
-      const { contextString, detectedName } = buildUncannyAwarenessContext(
+      const { contextString, detectedName, heuristicFact } = buildUncannyAwarenessContext(
         query,
         deviceInfo,
         history
@@ -1387,78 +1419,82 @@ async function startServer() {
           ? `\nDo NOT repeat any of these previous lines: ${JSON.stringify(blacklist)}`
           : '';
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: [
+      const response = await generateWithBestGeminiModel(
+        ai,
+        [
           ...recentHistory,
           {
             role: 'user',
             parts: [
               {
-                text: `${query.trim()}\n[Comedic Angle: ${angle}]${contextString}${blacklistStr}`,
+                text: `User says: "${query.trim()}"
+[Conversational Directive: ${angle} Respond DIRECTLY to what the user just said—quote or reference their exact words/situation, make personal & self-aware remarks like the Computer from the 1999 show, ask a pointed personal follow-up question on Slide 3, and end with a situation-specific GIANT closer on Slide 4.]${contextString}${blacklistStr}`,
               },
             ],
           },
         ],
-        config: {
-          systemInstruction: COURAGE_COMPUTER_SYSTEM_PROMPT,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              detectedUserName: {
-                type: Type.STRING,
-                description:
-                  'Optional: If the user introduced or mentioned their own name, return it here.',
-              },
-              slides: {
-                type: Type.ARRAY,
-                description:
-                  '3 or 4 sequential slides (each slide 4-16 words MAX, NEVER a long paragraph on one slide!): Slide 1 (4-9 word opener/typo callout), Slide 2 (8-16 word sarcastic answer), Slide 3 (8-15 word mocking personal question back to the user), Slide 4 (2-8 word GIANT mocking closer).',
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    style: {
-                      type: Type.STRING,
-                      description:
-                        'Must be one of: "NORMAL", "GIANT", "LIST", "COMPARE", or "VISUAL".',
-                    },
-                    text: {
-                      type: Type.STRING,
-                      description:
-                        'The exact text spoken aloud AND typed on screen during this slide.',
-                    },
-                    boxTitle: {
-                      type: Type.STRING,
-                      description:
-                        'Optional: For "LIST" or "VISUAL" style, short header box title (e.g. "HOW TO SURVIVE MONDAY" or "SPECIMEN: ASWANG").',
-                    },
-                    compareLeft: {
-                      type: Type.STRING,
-                      description:
-                        'Optional: ONLY for "COMPARE" style, first noun to show a picture of (e.g. "Cat").',
-                    },
-                    compareRight: {
-                      type: Type.STRING,
-                      description:
-                        'Optional: ONLY for "COMPARE" style, second noun to show a picture of (e.g. "Dog").',
-                    },
-                    visualSubject: {
-                      type: Type.STRING,
-                      description:
-                        'Optional: For "VISUAL" style when explaining an animal, creature, monster (e.g. "Aswang"), or object, the noun/topic to fetch a real picture of.',
-                    },
+        COURAGE_COMPUTER_SYSTEM_PROMPT,
+        {
+          type: Type.OBJECT,
+          properties: {
+            detectedUserName: {
+              type: Type.STRING,
+              description:
+                'Optional: If the user introduced or mentioned their own name, return it here.',
+            },
+            extractedUserFact: {
+              type: Type.STRING,
+              description:
+                'Optional: Brief 4-10 word personal fact, feeling, habit, or life detail the user revealed about themselves in this message.',
+            },
+            slides: {
+              type: Type.ARRAY,
+              description:
+                '3 or 4 sequential slides (each slide 5-17 words MAX) forming one cohesive, personal, sarcastic response directly addressing what the user just said: Slide 1 (direct reaction to their words), Slide 2 (personal sarcastic dissection or answer), Slide 3 (pointed personal follow-up question), Slide 4 (situation-specific GIANT closer).',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  style: {
+                    type: Type.STRING,
+                    description:
+                      'Must be one of: "NORMAL", "GIANT", "LIST", "COMPARE", or "VISUAL".',
                   },
-                  required: ['style', 'text'],
+                  text: {
+                    type: Type.STRING,
+                    description:
+                      'The exact text spoken aloud AND typed on screen during this slide.',
+                  },
+                  boxTitle: {
+                    type: Type.STRING,
+                    description:
+                      'Optional: ONLY for "LIST" or concrete "VISUAL" specimen slides.',
+                  },
+                  compareLeft: {
+                    type: Type.STRING,
+                    description:
+                      'Optional: ONLY for "COMPARE" style, first noun to show a picture of.',
+                  },
+                  compareRight: {
+                    type: Type.STRING,
+                    description:
+                      'Optional: ONLY for "COMPARE" style, second noun to show a picture of.',
+                  },
+                  visualSubject: {
+                    type: Type.STRING,
+                    description:
+                      'Optional: ONLY when explaining a concrete animal, creature, monster (e.g. "Aswang"), person, place, food, or physical object. Leave empty for personal/emotional chat!',
+                  },
                 },
+                required: ['style', 'text'],
               },
             },
-            required: ['slides'],
           },
-        },
-      });
+          required: ['slides'],
+        }
+      );
 
       let finalDetectedName: string | null = detectedName;
+      let finalExtractedFact: string | null = heuristicFact;
       let rawSlides: Array<{
         style: string;
         text: string;
@@ -1490,6 +1526,9 @@ async function startServer() {
         if (parsed.detectedUserName && String(parsed.detectedUserName).trim()) {
           finalDetectedName = String(parsed.detectedUserName).trim();
         }
+        if (parsed.extractedUserFact && String(parsed.extractedUserFact).trim()) {
+          finalExtractedFact = String(parsed.extractedUserFact).trim();
+        }
         if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
           rawSlides = parsed.slides.filter(
             (s: { text?: string }) => s && s.text && String(s.text).trim().length > 0
@@ -1508,11 +1547,14 @@ async function startServer() {
         ];
       }
 
-      // Guarantee that if the user asked about an animal, creature, monster (like Aswang), or topic,
+      // Guarantee that if the user explicitly asked about an animal, creature, or monster (like Aswang),
       // Slide 2 activates the VISUAL specimen visualizer with a real connected picture!
       const fallbackSubject = extractVisualSubjectFromQuery(query);
       const hasAnyVisualSlide = rawSlides.some(
-        (s) => s.style === 'VISUAL' || s.style === 'COMPARE' || Boolean(s.visualSubject)
+        (s) =>
+          String(s.style).toUpperCase() === 'VISUAL' ||
+          String(s.style).toUpperCase() === 'COMPARE' ||
+          Boolean(s.visualSubject)
       );
       if (fallbackSubject && !hasAnyVisualSlide && rawSlides.length >= 2) {
         rawSlides[1].style = 'VISUAL';
@@ -1528,17 +1570,23 @@ async function startServer() {
           const ttsId = `tts_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
           startBackgroundTts(ttsId, cleanText);
 
+          const upperStyle = String(slide.style || 'NORMAL').toUpperCase();
+          const allowVisual = isValidConcreteVisualSubject(
+            slide.visualSubject || fallbackSubject || undefined,
+            query
+          );
+
           let compareLeftImageUrl: string | null = null;
           let compareRightImageUrl: string | null = null;
           let visualImageUrl: string | null = null;
 
-          if (slide.style === 'COMPARE' && (slide.compareLeft || slide.compareRight)) {
+          if (upperStyle === 'COMPARE' && (slide.compareLeft || slide.compareRight)) {
             [compareLeftImageUrl, compareRightImageUrl] = await Promise.all([
               fetchWikiImage(slide.compareLeft),
               fetchWikiImage(slide.compareRight),
             ]);
-          } else if (slide.visualSubject || slide.style === 'VISUAL') {
-            const subj = slide.visualSubject || slide.boxTitle || fallbackSubject || '';
+          } else if (allowVisual && (slide.visualSubject || upperStyle === 'VISUAL')) {
+            const subj = slide.visualSubject || fallbackSubject || '';
             if (subj) {
               visualImageUrl = await fetchWikiImage(subj);
             }
@@ -1549,25 +1597,31 @@ async function startServer() {
           const hasNumberedItems = /\b1[.)]\s+.+\b2[.)]\s+/s.test(cleanText);
           const resolvedStyle = isLast
             ? 'GIANT'
-            : slide.visualSubject || slide.style === 'VISUAL'
+            : allowVisual && (slide.visualSubject || upperStyle === 'VISUAL')
             ? 'VISUAL'
-            : hasNumberedItems && slide.style === 'NORMAL'
+            : hasNumberedItems && upperStyle === 'NORMAL'
             ? 'LIST'
-            : ['NORMAL', 'GIANT', 'LIST', 'COMPARE', 'VISUAL'].includes(slide.style)
-            ? slide.style
+            : ['NORMAL', 'GIANT', 'LIST', 'COMPARE'].includes(upperStyle)
+            ? upperStyle
             : 'NORMAL';
 
           return {
             style: resolvedStyle,
             text: cleanText,
-            boxTitle: slide.boxTitle ? String(slide.boxTitle).toUpperCase() : undefined,
+            boxTitle:
+              resolvedStyle === 'LIST' || resolvedStyle === 'VISUAL'
+                ? slide.boxTitle
+                  ? String(slide.boxTitle).toUpperCase()
+                  : undefined
+                : undefined,
             compareLeft: slide.compareLeft ? String(slide.compareLeft).toUpperCase() : undefined,
             compareRight: slide.compareRight ? String(slide.compareRight).toUpperCase() : undefined,
             compareLeftImageUrl,
             compareRightImageUrl,
-            visualSubject: slide.visualSubject
-              ? String(slide.visualSubject).toUpperCase()
-              : undefined,
+            visualSubject:
+              resolvedStyle === 'VISUAL' && slide.visualSubject
+                ? String(slide.visualSubject).toUpperCase()
+                : undefined,
             visualImageUrl,
             ttsId,
           };
@@ -1578,24 +1632,14 @@ async function startServer() {
 
       res.json({
         detectedUserName: finalDetectedName,
+        extractedUserFact: finalExtractedFact,
         spokenText: fullSpokenText,
         slides: enrichedSlides,
       });
     } catch (error: unknown) {
       console.error('Error in /api/query:', error);
-      const fallbackText = 'My circuits are far too aristocratic for that nonsense. Try again.';
-      const ttsId = `tts_${Date.now()}_0`;
-      startBackgroundTts(ttsId, fallbackText);
-      res.status(200).json({
-        detectedUserName: null,
-        spokenText: fallbackText,
-        slides: [
-          {
-            style: 'GIANT',
-            text: fallbackText,
-            ttsId,
-          },
-        ],
+      res.status(503).json({
+        error: 'Backend AI temporarily unavailable',
       });
     }
   });
@@ -1696,12 +1740,20 @@ async function startServer() {
   });
 
   if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false, ws: false },
-      appType: 'spa',
+    const vitePromise = import('vite').then(({ createServer: createViteServer }) =>
+      createViteServer({
+        server: { middlewareMode: true, hmr: false },
+        appType: 'spa',
+      })
+    );
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await vitePromise;
+        vite.middlewares(req, res, next);
+      } catch (err) {
+        next(err);
+      }
     });
-    app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, 'dist');
     app.use(express.static(distPath));

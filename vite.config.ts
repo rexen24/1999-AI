@@ -81,20 +81,27 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],
+    optimizeDeps: {
+      entries: ['index.html'],
+    },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname || __dirname, '.'),
       },
     },
     server: {
       hmr: false,
       ws: false as const,
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      watch:
+        process.env.DISABLE_HMR === 'true'
+          ? null
+          : {
+              ignored: ['**/docs/**', '**/dist/**', '**/*voice-bank.json', '**/gh-pages.*'],
+            },
     },
   };
 });
