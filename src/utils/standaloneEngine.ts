@@ -1,4 +1,4 @@
-import { SlideSpec } from './soundEngine';
+import type { SlideSpec } from './soundEngine';
 
 export type StrictDeviceFormFactor = 'phone' | 'tablet' | 'laptop' | 'pc';
 
@@ -652,6 +652,69 @@ export async function getCompoundVoiceBankParts(ttsId?: string): Promise<string[
     parts.push(bank[k]);
   }
   return parts;
+}
+
+/**
+ * Guarantees that if live TTS synthesis ever fails or times out for a dynamic slide,
+ * the slide seamlessly resolves to an unused, context-matching Simon Prebble voice-bank clip
+ * with matching text so the Computer NEVER goes silent mid-sequence!
+ */
+export async function resolveFallbackVoiceBankSlide(
+  slide: SlideSpec
+): Promise<{ audioBase64: string | null; text: string; ttsId?: string }> {
+  const bank = await loadStandaloneVoiceBank();
+  let pool: Array<keyof typeof STANDALONE_VOICE_LINES> = PERSONAL_BODY_KEYS;
+
+  if (slide.style === 'GIANT') {
+    pool = [
+      'giant_0',
+      'giant_1',
+      'giant_2',
+      'giant_4',
+      'giant_5',
+      'giant_6',
+      'giant_7',
+      'giant_8',
+      'giant_9',
+      'giant_10',
+      'giant_11',
+      'giant_excuses',
+      'giant_growup',
+      'giant_delusional',
+      'giant_truth',
+    ];
+  } else if (slide.style === 'LIST') {
+    pool = ['list_survive_0', 'list_survive_1', 'list_survive_2', 'reply_life_0'];
+  } else if (slide.style === 'VISUAL') {
+    pool = ['vis_general_0', 'vis_general_1', 'vis_creature'];
+  } else if (slide.style === 'COMPARE') {
+    pool = ['vis_compare_body'];
+  } else if ((slide.text || '').includes('?')) {
+    pool = [
+      'ask_0',
+      'ask_5',
+      'ask_6',
+      'ask_8',
+      'ask_9',
+      'ask_personal_0',
+      'ask_personal_1',
+      'ask_personal_2',
+      'ask_personal_3',
+      'ask_personal_4',
+      'ask_personal_5',
+      'ask_personal_6',
+      'ask_personal_7',
+    ];
+  }
+
+  const picked = makeUniqueVoiceSlide(pool, slide.style, { allowPrefixStitch: false });
+  const key = picked.ttsId || '';
+  const b64 = key && bank[key] ? bank[key] : null;
+  return {
+    audioBase64: b64,
+    text: b64 ? picked.text : slide.text,
+    ttsId: b64 ? key : slide.ttsId,
+  };
 }
 
 function makeVoiceSlide(

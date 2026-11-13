@@ -185,30 +185,31 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
     if (rms > maxRms) maxRms = rms;
   }
 
-  const silenceThreshold = Math.max(0.005, maxRms * 0.06);
+  const onsetThreshold = Math.max(0.005, maxRms * 0.06);
+  const tailThreshold = Math.max(0.002, maxRms * 0.025);
   let firstActiveBucket = 0;
   let lastActiveBucket = numBuckets - 1;
 
   for (let b = 0; b < numBuckets; b++) {
-    if (rmsBuckets[b] >= silenceThreshold) {
+    if (rmsBuckets[b] >= onsetThreshold) {
       firstActiveBucket = b;
       break;
     }
   }
 
   for (let b = numBuckets - 1; b >= firstActiveBucket; b--) {
-    if (rmsBuckets[b] >= silenceThreshold) {
+    if (rmsBuckets[b] >= tailThreshold) {
       lastActiveBucket = b;
       break;
     }
   }
 
-  const trimStartSec = Math.max(0, firstActiveBucket * bucketDurationSec - 0.01);
+  const trimStartSec = Math.max(0, firstActiveBucket * bucketDurationSec - 0.015);
   const speechEndSec = Math.min(
     totalDuration,
-    (lastActiveBucket + 1) * bucketDurationSec + 0.015
+    (lastActiveBucket + 1) * bucketDurationSec + 0.11
   );
-  const effectiveDurationSec = Math.max(0.22, speechEndSec - trimStartSec);
+  const effectiveDurationSec = Math.max(0.25, speechEndSec - trimStartSec);
 
   // Build cumulative vocal energy curve across the active speech window [firstActiveBucket..lastActiveBucket]
   const activeCount = Math.max(1, lastActiveBucket - firstActiveBucket + 1);
@@ -223,7 +224,7 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
     // When voice is silent (pauses like "Oh......" or commas), advance almost zero (0.02) so text waits for the voice!
     // When voice is speaking, advance proportionally to syllable energy!
     const weight =
-      rms >= silenceThreshold * 0.75 ? Math.pow(normRms, 0.7) + 0.15 : 0.02;
+      rms >= tailThreshold ? Math.pow(normRms, 0.7) + 0.15 : 0.02;
     runningEnergy += weight;
     cumulativeEnergy[i] = runningEnergy;
   }
@@ -328,6 +329,12 @@ class RetroSoundEngine {
       if (ctx.state === 'suspended') {
         ctx.resume().catch(() => {});
       }
+      // Play a 1-sample silent buffer to permanently unlock Web Audio on iOS/Android/Chrome
+      const silent = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = silent;
+      src.connect(ctx.destination);
+      src.start(0);
     } catch {
       // Ignore
     }
@@ -785,13 +792,13 @@ class RetroSoundEngine {
       }
 
       const sampleRate = decodedSegments[0].buffer.sampleRate;
-      const pauseSamples = Math.floor(sampleRate * 0.11); // 110ms natural British breath pause
+      const pauseSamples = Math.floor(sampleRate * 0.15); // 150ms natural breath pause between stitched clauses
 
       const trimmedSlices = decodedSegments.map(({ buffer, env }) => {
         const startSample = Math.max(0, Math.floor(env.trimStartSec * buffer.sampleRate));
         const endSample = Math.min(
           buffer.length,
-          Math.ceil(env.speechEndSec * buffer.sampleRate)
+          Math.ceil((env.speechEndSec + 0.06) * buffer.sampleRate)
         );
         const rawSlice = buffer.getChannelData(0).subarray(startSample, Math.max(startSample + 1, endSample));
         return rawSlice;
@@ -836,15 +843,43 @@ class RetroSoundEngine {
     return buffer;
   }
 
-  private playSingleDecodedSlide(
+  private async playSingleDecodedSlide(
     slide: DecodedSlide,
     onRender: (state: ActiveSlideRender) => void,
     seqId: number
   ): Promise<void> {
+    if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
+      return;
+    }
+
+    const ctx = this.getContext();
+    if (ctx.state === 'suspended') {
+      await Promise.race([
+        ctx.resume().catch(() => {}),
+        new Promise((r) => setTimeout(r, 75)),
+      ]);
+    }
+
+    if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
+      return;
+    }
+
     return new Promise((resolve) => {
       if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
         resolve();
         return;
+      }
+
+      // Cleanly stop any previous slide's active buffer source before starting this slide
+      if (this.activeVoiceSource) {
+        try {
+          this.activeVoiceSource.onended = null;
+          this.activeVoiceSource.stop();
+          this.activeVoiceSource.disconnect();
+        } catch {
+          // Ignore
+        }
+        this.activeVoiceSource = null;
       }
 
       if (slide.style === 'GIANT') {
@@ -881,11 +916,6 @@ class RetroSoundEngine {
         }
       };
 
-      const ctx = this.getContext();
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-
       const envelope =
         slide.envelope ||
         (slide.audioBuffer ? analyzeAudioBufferEnvelope(slide.audioBuffer) : null);
@@ -905,12 +935,31 @@ class RetroSoundEngine {
           const totalWallDurationSec =
             Math.max(0.25, slide.audioBuffer.duration - trimStart) / playbackRate;
           const startTime = ctx.currentTime;
+          let finished = false;
 
           emitAtProgress(0.01, 0.35);
 
-          const tick = () => {
+          const finishSlide = () => {
+            if (finished) return;
+            finished = true;
+            if (this.rafId !== null) {
+              cancelAnimationFrame(this.rafId);
+              this.rafId = null;
+            }
             if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
               resolve();
+              return;
+            }
+            emitAtProgress(1, 0);
+            this.activePauseTimeout = setTimeout(() => {
+              this.activePauseTimeout = null;
+              resolve();
+            }, postSlidePauseMs);
+          };
+
+          const tick = () => {
+            if (finished || this.playbackCancelled || this.playbackSequenceId !== seqId) {
+              if (!finished) resolve();
               return;
             }
             const wallElapsedSec = ctx.currentTime - startTime;
@@ -919,25 +968,13 @@ class RetroSoundEngine {
             const energy = getEnvelopeInstantVoiceEnergy(envelope, bufferElapsedSec);
             emitAtProgress(progress, energy);
 
-            if (wallElapsedSec < totalWallDurationSec) {
+            if (wallElapsedSec < totalWallDurationSec + 0.15) {
               this.rafId = requestAnimationFrame(tick);
             }
           };
 
           source.onended = () => {
-            if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
-              resolve();
-              return;
-            }
-            if (this.rafId !== null) {
-              cancelAnimationFrame(this.rafId);
-              this.rafId = null;
-            }
-            emitAtProgress(1, 0);
-            this.activePauseTimeout = setTimeout(() => {
-              this.activePauseTimeout = null;
-              resolve();
-            }, postSlidePauseMs);
+            finishSlide();
           };
 
           source.start(0, trimStart);
@@ -948,49 +985,75 @@ class RetroSoundEngine {
         }
       }
 
-      // 2. Wall-clock + Mid-Slide Audio Unlock Path (for mobile boot before first screen touch)
+      // 2. Wall-clock + Mid-Slide Audio Unlock Path (for boot before first screen touch)
       let audioStartedMidSlide = false;
+      let unlockStartTime = 0;
       const trimStart = envelope ? envelope.trimStartSec : 0;
-      const durationMs = envelope
-        ? Math.max(1150, (envelope.effectiveDurationSec / playbackRate) * 1000)
-        : slide.audioBuffer
-        ? Math.max(1300, (slide.audioBuffer.duration / playbackRate) * 1000)
+      const fullAudioDurationMs = slide.audioBuffer
+        ? Math.max(1300, ((slide.audioBuffer.duration - trimStart) / playbackRate) * 1000)
         : Math.max(1750, fullUpperText.length * 58);
-      const started = performance.now();
+      let durationMs = envelope
+        ? Math.max(1250, (envelope.effectiveDurationSec / playbackRate) * 1000)
+        : fullAudioDurationMs;
+      let started = performance.now();
+      let finishedFallback = false;
+
+      const finishFallbackSlide = () => {
+        if (finishedFallback) return;
+        finishedFallback = true;
+        if (this.activeFallbackInterval !== null) {
+          clearInterval(this.activeFallbackInterval);
+          this.activeFallbackInterval = null;
+        }
+        if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
+          resolve();
+          return;
+        }
+        emitAtProgress(1, 0);
+        this.activePauseTimeout = setTimeout(() => {
+          this.activePauseTimeout = null;
+          resolve();
+        }, postSlidePauseMs);
+      };
 
       emitAtProgress(0.01, 0.3);
 
       this.activeFallbackInterval = setInterval(() => {
-        if (this.playbackCancelled || this.playbackSequenceId !== seqId) {
+        if (finishedFallback || this.playbackCancelled || this.playbackSequenceId !== seqId) {
           if (this.activeFallbackInterval !== null) {
             clearInterval(this.activeFallbackInterval);
             this.activeFallbackInterval = null;
           }
-          resolve();
+          if (!finishedFallback) resolve();
           return;
         }
 
-        const wallElapsedMs = performance.now() - started;
-        const wallElapsedSec = wallElapsedMs / 1000;
-        const bufferElapsedSec = wallElapsedSec * playbackRate;
-
+        // If browser audio unlocks during this slide, play the ENTIRE slide audio from trimStart so no words are ever skipped!
         if (!audioStartedMidSlide && slide.audioBuffer && !this.isMuted && ctx.state === 'running') {
           audioStartedMidSlide = true;
+          started = performance.now();
+          unlockStartTime = ctx.currentTime;
+          durationMs = fullAudioDurationMs + 250;
           try {
             const source = ctx.createBufferSource();
             source.buffer = slide.audioBuffer;
             source.playbackRate.value = playbackRate;
             this.activeVoiceSource = source;
             source.connect(ctx.destination);
-            const offsetSec = Math.min(
-              slide.audioBuffer.duration - 0.05,
-              Math.max(0, trimStart + bufferElapsedSec)
-            );
-            source.start(0, offsetSec);
+            source.onended = () => {
+              finishFallbackSlide();
+            };
+            source.start(0, trimStart);
           } catch {
             // Ignore
           }
         }
+
+        const wallElapsedMs = performance.now() - started;
+        const wallElapsedSec = audioStartedMidSlide
+          ? Math.max(0, ctx.currentTime - unlockStartTime)
+          : wallElapsedMs / 1000;
+        const bufferElapsedSec = wallElapsedSec * playbackRate;
 
         const progress = envelope
           ? getEnvelopeSpeechProgress(envelope, bufferElapsedSec)
@@ -1002,16 +1065,10 @@ class RetroSoundEngine {
           : 0;
 
         emitAtProgress(progress, energy);
-        if (wallElapsedMs >= durationMs) {
-          if (this.activeFallbackInterval !== null) {
-            clearInterval(this.activeFallbackInterval);
-            this.activeFallbackInterval = null;
-          }
-          emitAtProgress(1, 0);
-          this.activePauseTimeout = setTimeout(() => {
-            this.activePauseTimeout = null;
-            resolve();
-          }, postSlidePauseMs);
+        if (!audioStartedMidSlide && wallElapsedMs >= durationMs) {
+          finishFallbackSlide();
+        } else if (audioStartedMidSlide && wallElapsedMs >= durationMs + 600) {
+          finishFallbackSlide();
         }
       }, 20);
     });

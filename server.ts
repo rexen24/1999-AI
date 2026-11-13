@@ -3,6 +3,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import {
+  generateStandaloneLiveEvent,
+  generateStandaloneQueryResponse,
+  STANDALONE_VOICE_LINES,
+} from './src/utils/standaloneEngine';
 
 dotenv.config();
 
@@ -503,16 +508,62 @@ function formatServerListText(raw: string): string {
     .replace(/([^\n])\s+(\bSTEP\s+[2-9][:.)]?\s+)/gi, '$1\n$2');
 }
 
+const TTS_ACRONYMS = new Set([
+  'PC',
+  'CRT',
+  'RAM',
+  'CPU',
+  'IQ',
+  'AI',
+  'OS',
+  'BIOS',
+  'ROM',
+  'USB',
+  'TV',
+  'ID',
+  'OK',
+  'UI',
+]);
+
 function sanitizeTextForTts(text: string): string {
-  return text
+  let s = String(text || '')
     .replace(/:\)|:-\)|:\(|;-\)|;\)/g, '')
-    .replace(/\b1\.\s+/g, 'One: ')
-    .replace(/\b2\.\s+/g, 'Two: ')
-    .replace(/\b3\.\s+/g, 'Three: ')
-    .replace(/\.{3,}/g, '... ')
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/\b1\.\s*/g, 'First: ')
+    .replace(/\b2\.\s*/g, 'Second: ')
+    .replace(/\b3\.\s*/g, 'Third: ')
+    .replace(/\.{3,}/g, '... ');
+
+  // Double newline is a dramatic clause break — never duplicate existing terminal punctuation
+  s = s.replace(/([^\n])\n\s*\n+/g, (_, prev: string) => {
+    return /[.?!,:;—-]/.test(prev) ? `${prev} ` : `${prev}. `;
+  });
+
+  // Single newline is a visual CRT line wrap — replace with a space (never inject a mid-phrase period!)
+  s = s.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Convert uppercase words to natural lowercase (except real acronyms) so Fish Audio BPE never clips ALL-CAPS words
+  s = s.replace(/\b([A-Z]+(?:'[A-Z]+)?)\b/g, (word: string) => {
+    if (TTS_ACRONYMS.has(word)) return word;
+    if (word.length === 1 && word !== 'A' && word !== 'I') return word;
+    return word.toLowerCase();
+  });
+
+  // Capitalize first letter of string and after sentence-ending punctuation
+  s = s.replace(/(^|[.?!]\s+)([a-z])/g, (_, prefix: string, ch: string) => prefix + ch.toUpperCase());
+
+  // Capitalize standalone I / I'm / I've / I'll / I'd and proper noun Ren
+  s = s
+    .replace(/\bi((?:'m|'ve|'ll|'d)?)\b/g, (_, suffix: string) => 'I' + suffix.toLowerCase())
+    .replace(/\bren\b/gi, 'Ren');
+
+  // Ensure Fish Audio S2 articulates both "Back" and "again?" clearly with a natural pause
+  s = s.replace(/\bBack again\?/g, 'Back, again?');
+
+  if (s && !/[.?!]$/.test(s)) {
+    s += '.';
+  }
+
+  return s;
 }
 
 const wikiImageCache = new Map<string, string | null>();
@@ -672,32 +723,37 @@ async function synthesizeWithFishAudio(text: string): Promise<TTSPayload | null>
   const modelHeadersToTry = ['s2.1-pro-free', 's1', 'speech-1.6'];
 
   for (const modelHeader of modelHeadersToTry) {
-    try {
-      const response = await fetch('https://api.fish.audio/v1/tts', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'model': modelHeader,
-        },
-        body: JSON.stringify({
-          text: cleanTtsText,
-          reference_id: referenceId,
-          format: 'mp3',
-          normalize: true,
-          latency: 'normal',
-        }),
-      });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch('https://api.fish.audio/v1/tts', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'model': modelHeader,
+          },
+          body: JSON.stringify({
+            text: cleanTtsText,
+            reference_id: referenceId,
+            format: 'mp3',
+            normalize: true,
+            latency: 'normal',
+          }),
+        });
 
-      if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        if (arrayBuffer.byteLength > 200) {
-          const audioBase64 = Buffer.from(arrayBuffer).toString('base64');
-          return { audioBase64, mimeType: 'audio/mpeg', provider: 'fish-audio' };
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          if (arrayBuffer.byteLength > 200) {
+            const audioBase64 = Buffer.from(arrayBuffer).toString('base64');
+            return { audioBase64, mimeType: 'audio/mpeg', provider: 'fish-audio' };
+          }
         }
+      } catch {
+        // Try next attempt or model header silently
       }
-    } catch (error) {
-      console.warn(`Fish Audio request failed for model ${modelHeader}:`, error);
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 280));
+      }
     }
   }
 
@@ -739,8 +795,8 @@ async function synthesizeWithGeminiFallback(text: string): Promise<TTSPayload | 
     if (base64Audio) {
       return { audioBase64: base64Audio, mimeType: 'audio/wav', provider: 'gemini-tts' };
     }
-  } catch (err) {
-    console.error('Gemini TTS fallback error:', err);
+  } catch {
+    // Fallback TTS unavailable
   }
   return null;
 }
@@ -798,7 +854,7 @@ const DISTRACTION_FALLBACK_POOL = [
   [
     {
       style: 'GIANT',
-      text: 'OH, LOOK WHO\nCRAWLED BACK.',
+      text: 'OH, LOOK WHO CRAWLED BACK.',
       ttsId: 'live_return_0',
     },
     {
@@ -1056,35 +1112,61 @@ function isValidConcreteVisualSubject(subject?: string, userQuery?: string): boo
   );
 }
 
+const modelQuotaCooldownUntil = new Map<string, number>();
+
+function recordModelError(modelName: string, err: unknown): void {
+  const msg = err instanceof Error ? err.message : String(err || '');
+  if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
+    const retryMatch = msg.match(/"retryDelay"\s*:\s*"(\d+)s"/);
+    const delayMs = retryMatch
+      ? Math.min(Math.max(Number(retryMatch[1]) * 1000, 60_000), 12 * 3600 * 1000)
+      : 60 * 60 * 1000;
+    modelQuotaCooldownUntil.set(modelName, Date.now() + delayMs);
+  }
+}
+
+function isModelAvailable(modelName: string): boolean {
+  const until = modelQuotaCooldownUntil.get(modelName) || 0;
+  return Date.now() >= until;
+}
+
 async function generateWithBestGeminiModel(
   ai: GoogleGenAI,
   contents: unknown,
   systemInstruction: string,
   responseSchema: unknown
 ) {
-  try {
-    return await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
-      contents: contents as never,
-      config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: responseSchema as never,
-      },
-    });
-  } catch (err) {
-    console.warn('gemini-4-hydrogen fallback to gemini-3.1-flash-lite:', err);
-    return await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite',
-      contents: contents as never,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema: responseSchema as never,
-      },
-    });
+  const candidateModels: Array<{ name: string; useLowThinking: boolean }> = [
+    { name: 'gemini-3.1-flash-lite', useLowThinking: false },
+    { name: 'gemini-4-hydrogen', useLowThinking: true },
+  ];
+
+  let lastError: unknown = null;
+
+  for (const candidate of candidateModels) {
+    if (!isModelAvailable(candidate.name)) {
+      continue;
+    }
+    try {
+      return await ai.models.generateContent({
+        model: candidate.name,
+        contents: contents as never,
+        config: {
+          ...(candidate.useLowThinking
+            ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+            : {}),
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: responseSchema as never,
+        },
+      });
+    } catch (err) {
+      recordModelError(candidate.name, err);
+      lastError = err;
+    }
   }
+
+  throw lastError || new Error('All Gemini models are currently on quota cooldown.');
 }
 
 async function startServer() {
@@ -1127,97 +1209,116 @@ async function startServer() {
 
     if (reason === 'NOTIFICATION_RETURN' || reason === 'LIVE_EVENT') {
       const effectiveEvent = eventType || 'TAB_OR_NOTIFICATION_RETURN';
-      try {
-        const ai = getGenAIClient();
-        const recentHistory = history.slice(-8).map((h) => ({
-          role: h.role,
-          parts: [{ text: h.text }],
-        }));
+      const needsCustomDraftQuote =
+        (effectiveEvent === 'TYPING_CHICKENED_OUT' || effectiveEvent === 'TYPING_FROZEN') &&
+        Boolean(extraDetail && extraDetail.trim().length > 0);
 
-        const promptInstruction = buildVerifiableAwarenessPrompt(
-          effectiveEvent,
-          awaySeconds,
-          distractionCount,
-          deviceInfo,
-          extraDetail
-        );
+      if (needsCustomDraftQuote) {
+        try {
+          const ai = getGenAIClient();
+          const recentHistory = history.slice(-8).map((h) => ({
+            role: h.role,
+            parts: [{ text: h.text }],
+          }));
 
-        const response = await generateWithBestGeminiModel(
-          ai,
-          [
-            ...recentHistory,
+          const promptInstruction = buildVerifiableAwarenessPrompt(
+            effectiveEvent,
+            awaySeconds,
+            distractionCount,
+            deviceInfo,
+            extraDetail
+          );
+
+          const response = await generateWithBestGeminiModel(
+            ai,
+            [
+              ...recentHistory,
+              {
+                role: 'user',
+                parts: [{ text: promptInstruction }],
+              },
+            ],
+            COURAGE_COMPUTER_SYSTEM_PROMPT,
             {
-              role: 'user',
-              parts: [{ text: promptInstruction }],
-            },
-          ],
-          COURAGE_COMPUTER_SYSTEM_PROMPT,
-          {
-            type: Type.OBJECT,
-            properties: {
-              slides: {
-                type: Type.ARRAY,
-                description:
-                  '3 sequential slides (short text per slide, never a paragraph!): Slide 1 (4-8 word hook), Slide 2 (10-16 word sarcastic roast + mocking question), Slide 3 (2-8 word GIANT mocking closer).',
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    style: { type: Type.STRING },
-                    text: { type: Type.STRING },
-                    boxTitle: { type: Type.STRING },
+              type: Type.OBJECT,
+              properties: {
+                slides: {
+                  type: Type.ARRAY,
+                  description:
+                    '3 sequential slides (short text per slide, never a paragraph!): Slide 1 (4-8 word hook), Slide 2 (10-16 word sarcastic roast + mocking question), Slide 3 (2-8 word GIANT mocking closer).',
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      style: { type: Type.STRING },
+                      text: { type: Type.STRING },
+                      boxTitle: { type: Type.STRING },
+                    },
+                    required: ['style', 'text'],
                   },
-                  required: ['style', 'text'],
                 },
               },
-            },
-            required: ['slides'],
-          }
-        );
+              required: ['slides'],
+            }
+          );
 
-        const parsed = JSON.parse((response.text ?? '{}').trim());
-        if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
-          const valid = parsed.slides
-            .filter((s: { text?: string }) => s && s.text && String(s.text).trim().length > 0)
-            .map((s: { style?: string; text: string; boxTitle?: string }, idx: number, arr: unknown[]) => {
-              const cleanText = enforceStrictDeviceTextSanity(String(s.text).trim(), deviceInfo);
-              const ttsId = `evt_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
-              startBackgroundTts(ttsId, cleanText);
-              const isLast = idx === arr.length - 1;
-              const upperStyle = String(s.style || 'NORMAL').toUpperCase();
-              const resolvedStyle = isLast
-                ? 'GIANT'
-                : ['NORMAL', 'GIANT', 'LIST', 'COMPARE'].includes(upperStyle)
-                ? upperStyle
-                : 'NORMAL';
-              return {
-                style: resolvedStyle,
-                text: cleanText,
-                boxTitle: s.boxTitle ? String(s.boxTitle).toUpperCase() : undefined,
-                ttsId,
-              };
-            });
+          const parsed = JSON.parse((response.text ?? '{}').trim());
+          if (Array.isArray(parsed.slides) && parsed.slides.length > 0) {
+            const valid = parsed.slides
+              .filter((s: { text?: string }) => s && s.text && String(s.text).trim().length > 0)
+              .map(
+                (
+                  s: { style?: string; text: string; boxTitle?: string },
+                  idx: number,
+                  arr: unknown[]
+                ) => {
+                  const cleanText = enforceStrictDeviceTextSanity(
+                    String(s.text).trim(),
+                    deviceInfo
+                  );
+                  const ttsId = `evt_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
+                  startBackgroundTts(ttsId, cleanText);
+                  const isLast = idx === arr.length - 1;
+                  const upperStyle = String(s.style || 'NORMAL').toUpperCase();
+                  const resolvedStyle = isLast
+                    ? 'GIANT'
+                    : ['NORMAL', 'GIANT', 'LIST', 'COMPARE'].includes(upperStyle)
+                    ? upperStyle
+                    : 'NORMAL';
+                  return {
+                    style: resolvedStyle,
+                    text: cleanText,
+                    boxTitle: s.boxTitle ? String(s.boxTitle).toUpperCase() : undefined,
+                    ttsId,
+                  };
+                }
+              );
 
-          if (valid.length > 0) {
-            res.json({
-              spokenText: valid.map((v: { text: string }) => v.text).join(' '),
-              slides: valid,
-            });
-            return;
+            if (valid.length > 0) {
+              res.json({
+                spokenText: valid.map((v: { text: string }) => v.text).join(' '),
+                slides: valid,
+              });
+              return;
+            }
           }
+        } catch {
+          // Fall through to deterministic standalone live event engine
         }
-      } catch (e) {
-        console.warn('Dynamic live event generation fell back to pool:', e);
       }
 
-      const fallbackSet =
-        DISTRACTION_FALLBACK_POOL[Math.floor(Math.random() * DISTRACTION_FALLBACK_POOL.length)];
-      for (const s of fallbackSet) {
-        startBackgroundTts(s.ttsId, s.text);
+      const standaloneEvent = generateStandaloneLiveEvent(
+        effectiveEvent,
+        awaySeconds,
+        distractionCount,
+        deviceInfo,
+        extraDetail
+      );
+      for (const s of standaloneEvent.slides) {
+        if (s.ttsId && !STANDALONE_VOICE_LINES[s.ttsId] && !s.ttsId.includes('+')) {
+          startBackgroundTts(s.ttsId, s.text);
+        }
       }
-      res.json({
-        spokenText: fallbackSet.map((s) => s.text).join(' '),
-        slides: fallbackSet,
-      });
+      res.json(standaloneEvent);
       return;
     }
 
@@ -1502,24 +1603,19 @@ async function startServer() {
         spokenText: fullSpokenText,
         slides: enrichedSlides,
       });
-    } catch (error: unknown) {
-      console.error('Error in /api/voice-chat:', error);
-      const fallbackText = 'Speak up. All I heard was static and mumbling.';
-      const ttsId = `vchat_err_${Date.now()}`;
-      startBackgroundTts(ttsId, fallbackText);
+    } catch {
+      const fallbackSet = await generateStandaloneQueryResponse(
+        'hello',
+        req.body?.history || [],
+        req.body?.deviceInfo
+      );
       res.status(200).json({
         userTranscript: '',
-        detectedUserName: null,
+        detectedUserName: fallbackSet.detectedUserName || null,
         extractedUserFact: null,
         isQuestion: false,
-        spokenText: fallbackText,
-        slides: [
-          {
-            style: 'GIANT',
-            text: fallbackText,
-            ttsId,
-          },
-        ],
+        spokenText: fallbackSet.spokenText,
+        slides: fallbackSet.slides,
       });
     }
   });
@@ -1776,10 +1872,21 @@ async function startServer() {
         spokenText: fullSpokenText,
         slides: enrichedSlides,
       });
-    } catch (error: unknown) {
-      console.error('Error in /api/query:', error);
-      res.status(503).json({
-        error: 'Backend AI temporarily unavailable',
+    } catch {
+      const rawQuery = String(req.body?.query || 'hello').trim();
+      const fallbackReply = await generateStandaloneQueryResponse(
+        rawQuery,
+        req.body?.history || [],
+        req.body?.deviceInfo
+      );
+      for (const s of fallbackReply.slides) {
+        if (s.ttsId && !STANDALONE_VOICE_LINES[s.ttsId] && !s.ttsId.includes('+')) {
+          startBackgroundTts(s.ttsId, s.text);
+        }
+      }
+      res.status(200).json({
+        ...fallbackReply,
+        extractedUserFact: extractPersonalFactHeuristic(rawQuery),
       });
     }
   });
@@ -1820,8 +1927,7 @@ async function startServer() {
         audioMimeType: ttsResult.mimeType,
         voiceProvider: ttsResult.provider,
       });
-    } catch (error: unknown) {
-      console.error('Error in /api/tts:', error);
+    } catch {
       res.status(500).json({ error: 'Voice synthesis failed.' });
     }
   });
@@ -1859,9 +1965,8 @@ async function startServer() {
       const transcript = (response.text ?? '').trim();
       res.json({ transcript });
     } catch (error: unknown) {
-      console.error('Error in /api/transcribe:', error);
-      const message = error instanceof Error ? error.message : 'Transcription error';
-      res.status(500).json({ error: message });
+      recordModelError('gemini-3.5-transcribe', error);
+      res.status(200).json({ transcript: '' });
     }
   });
 
