@@ -64,19 +64,15 @@ function buildSpeechTimeline(text: string): { weights: number[]; totalWeight: nu
     let w = 1.0;
 
     if (ch === '.' && nextCh === '.') {
-      w = 1.6;
+      w = 1.25;
     } else if (ch === '.' || ch === '!' || ch === '?') {
-      w = 3.8;
-    } else if (ch === ',' || ch === ';' || ch === ':' || ch === '—' || ch === '-') {
-      w = 2.4;
+      w = 1.65;
+    } else if (ch === ',' || ch === ';' || ch === ':' || ch === '—') {
+      w = 1.3;
     } else if (ch === '\n') {
-      w = 2.2;
-    } else if (ch === ' ') {
-      w = 0.6;
-    } else if (/[AEIOUaeiou]/.test(ch)) {
-      w = 1.15;
+      w = 1.35;
     } else {
-      w = 0.9;
+      w = 1.0;
     }
 
     weights.push(w);
@@ -185,8 +181,8 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
     if (rms > maxRms) maxRms = rms;
   }
 
-  const onsetThreshold = Math.max(0.005, maxRms * 0.06);
-  const tailThreshold = Math.max(0.002, maxRms * 0.025);
+  const onsetThreshold = Math.max(0.004, maxRms * 0.055);
+  const tailThreshold = Math.max(0.0025, maxRms * 0.03);
   let firstActiveBucket = 0;
   let lastActiveBucket = numBuckets - 1;
 
@@ -204,34 +200,53 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
     }
   }
 
-  const trimStartSec = Math.max(0, firstActiveBucket * bucketDurationSec - 0.015);
+  const trimStartSec = Math.max(0, firstActiveBucket * bucketDurationSec - 0.01);
   const speechEndSec = Math.min(
     totalDuration,
-    (lastActiveBucket + 1) * bucketDurationSec + 0.11
+    (lastActiveBucket + 1) * bucketDurationSec + 0.03
   );
   const effectiveDurationSec = Math.max(0.25, speechEndSec - trimStartSec);
 
-  // Build cumulative vocal energy curve across the active speech window [firstActiveBucket..lastActiveBucket]
+  // Build steady speech-cadence timeline across [firstActiveBucket..lastActiveBucket]:
+  // Active speech advances at a constant, uniform rate (1.0) so typing never speeds up or slows down mid-word,
+  // while only genuine long pauses (>= 160ms of silence between clauses) slow down to wait for the voice!
   const activeCount = Math.max(1, lastActiveBucket - firstActiveBucket + 1);
   const cumulativeEnergy = new Float32Array(activeCount);
   const normalizedRms = new Float32Array(activeCount);
-  let runningEnergy = 0;
+  const isLongPauseBucket = new Uint8Array(activeCount);
 
+  let silentRun = 0;
   for (let i = 0; i < activeCount; i++) {
     const rms = rmsBuckets[firstActiveBucket + i];
     const normRms = Math.min(1, rms / Math.max(0.001, maxRms));
     normalizedRms[i] = normRms;
-    // When voice is silent (pauses like "Oh......" or commas), advance almost zero (0.02) so text waits for the voice!
-    // When voice is speaking, advance proportionally to syllable energy!
-    const weight =
-      rms >= tailThreshold ? Math.pow(normRms, 0.7) + 0.15 : 0.02;
-    runningEnergy += weight;
-    cumulativeEnergy[i] = runningEnergy;
+    if (rms < tailThreshold) {
+      silentRun++;
+    } else {
+      if (silentRun >= 8) {
+        for (let k = i - silentRun; k < i; k++) {
+          isLongPauseBucket[k] = 1;
+        }
+      }
+      silentRun = 0;
+    }
+  }
+  if (silentRun >= 8) {
+    for (let k = activeCount - silentRun; k < activeCount; k++) {
+      isLongPauseBucket[k] = 1;
+    }
   }
 
-  if (runningEnergy > 0) {
+  let runningWeight = 0;
+  for (let i = 0; i < activeCount; i++) {
+    const weight = isLongPauseBucket[i] ? 0.12 : 1.0;
+    runningWeight += weight;
+    cumulativeEnergy[i] = runningWeight;
+  }
+
+  if (runningWeight > 0) {
     for (let i = 0; i < activeCount; i++) {
-      cumulativeEnergy[i] = cumulativeEnergy[i] / runningEnergy;
+      cumulativeEnergy[i] = cumulativeEnergy[i] / runningWeight;
     }
   } else {
     for (let i = 0; i < activeCount; i++) {
@@ -251,7 +266,7 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
 
 /**
  * Computes exact [0..1] speech progress for the current playhead position (`bufferElapsedSec`)
- * inside the trimmed audio buffer. Zero artificial lead so text never races ahead of the voice!
+ * inside the trimmed audio buffer. Steady, uniform advancement locked to the actual voice duration!
  */
 function getEnvelopeSpeechProgress(envelope: SpeechEnvelope, bufferElapsedSec: number): number {
   if (bufferElapsedSec <= 0) return 0.01;
@@ -265,11 +280,9 @@ function getEnvelopeSpeechProgress(envelope: SpeechEnvelope, bufferElapsedSec: n
   if (idx >= arr.length - 1) return 1;
   const prev = idx <= 0 ? 0 : arr[idx - 1];
   const curr = arr[Math.max(0, idx)];
-  const energyProgress = prev + (curr - prev) * frac;
+  const cadenceProgress = prev + (curr - prev) * frac;
 
-  const linearProgress = Math.min(1, bufferElapsedSec / envelope.effectiveDurationSec);
-  // 80% real vocal waveform energy + 20% linear playhead anchor for exact word-for-word locking
-  return Math.min(1, Math.max(0.01, energyProgress * 0.8 + linearProgress * 0.2));
+  return Math.min(1, Math.max(0.01, cadenceProgress));
 }
 
 function getEnvelopeInstantVoiceEnergy(
@@ -286,6 +299,7 @@ function getEnvelopeInstantVoiceEnergy(
 
 class RetroSoundEngine {
   private ctx: AudioContext | null = null;
+  private voiceGainNode: GainNode | null = null;
   private isMuted: boolean = false;
   private activeVoiceSource: AudioBufferSourceNode | null = null;
   private activeHtmlAudio: HTMLAudioElement | null = null;
@@ -323,6 +337,16 @@ class RetroSoundEngine {
     return this.ctx;
   }
 
+  private getVoiceGainNode(): GainNode {
+    const ctx = this.getContext();
+    if (!this.voiceGainNode) {
+      this.voiceGainNode = ctx.createGain();
+      this.voiceGainNode.gain.value = this.isMuted ? 0 : 1;
+      this.voiceGainNode.connect(ctx.destination);
+    }
+    return this.voiceGainNode;
+  }
+
   public unlockAudio() {
     try {
       const ctx = this.getContext();
@@ -351,11 +375,27 @@ class RetroSoundEngine {
     }
   }
 
+  /**
+   * Mutes or unmutes audio output ONLY without stopping active voice playback or cutting off the typewriter!
+   */
   public setMuted(muted: boolean) {
     this.isMuted = muted;
+    if (this.voiceGainNode && this.ctx) {
+      try {
+        this.voiceGainNode.gain.setValueAtTime(muted ? 0 : 1, this.ctx.currentTime);
+      } catch {
+        this.voiceGainNode.gain.value = muted ? 0 : 1;
+      }
+    }
     if (muted) {
       this.stopWaitingSound();
-      this.stopVoice();
+      try {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+      } catch {
+        // Ignore
+      }
     }
   }
 
@@ -494,45 +534,101 @@ class RetroSoundEngine {
     }
   }
 
-  // Iconic Rapid Ringing Cartoon Bell Sound Effect + Android Haptic Bell Pulse
+  // Authentic Rapid-Clanging Metallic Brass Cartoon Bell ("BRRRRRING!") + Haptic Bell Pulse
   public playSearchFoundBell() {
     if (this.isMuted) return;
-    this.vibrate([45, 25, 45, 25, 45, 25, 70]);
+    this.vibrate([45, 25, 45, 25, 45, 25, 75]);
     try {
       const ctx = this.getContext();
       if (ctx.state !== 'running') return;
       const now = ctx.currentTime;
 
-      const totalStrikes = 20;
-      const strikeInterval = 0.036;
+      // Short metallic clapper transient noise buffer (reused across strikes)
+      const clickSamples = Math.max(1, Math.floor(ctx.sampleRate * 0.014));
+      const clickBuffer = ctx.createBuffer(1, clickSamples, ctx.sampleRate);
+      const clickData = clickBuffer.getChannelData(0);
+      for (let i = 0; i < clickSamples; i++) {
+        clickData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (clickSamples * 0.25));
+      }
+
+      const totalStrikes = 14;
+      const strikeInterval = 0.052;
+      const domeFundamental = 1567.98; // Bright brass dome bell G6
 
       for (let idx = 0; idx < totalStrikes; idx++) {
         const isFinalStrike = idx === totalStrikes - 1;
         const strikeTime = now + idx * strikeInterval;
+        // Slight micro-variation as physical clapper bounces against vibrating brass dome
+        const detuneRatio = 1 + (idx % 2 === 0 ? 0.0025 : -0.002) + (Math.random() - 0.5) * 0.0015;
+        const f0 = domeFundamental * detuneRatio;
 
-        const baseFreq = idx % 2 === 0 ? 1960.0 : 2349.32;
-        const bellPartials = [
-          { freq: baseFreq, amp: 0.14, decay: isFinalStrike ? 0.45 : 0.06 },
-          { freq: baseFreq * 1.48, amp: 0.085, decay: isFinalStrike ? 0.3 : 0.045 },
-          { freq: baseFreq * 2.12, amp: 0.055, decay: isFinalStrike ? 0.2 : 0.035 },
-          { freq: 5400.0, amp: 0.035, decay: 0.025 },
+        // 1. FM Metallic Bell Core (1 : 2.414 carrier-to-modulator ratio for real brass bell timbre)
+        const carrier = ctx.createOscillator();
+        const modulator = ctx.createOscillator();
+        const modGain = ctx.createGain();
+        const carrierGain = ctx.createGain();
+
+        carrier.type = 'sine';
+        modulator.type = 'sine';
+        carrier.frequency.setValueAtTime(f0, strikeTime);
+        modulator.frequency.setValueAtTime(f0 * 2.414, strikeTime);
+
+        const fmDecay = isFinalStrike ? 0.28 : 0.055;
+        modGain.gain.setValueAtTime(f0 * 1.65, strikeTime);
+        modGain.gain.exponentialRampToValueAtTime(1.0, strikeTime + fmDecay);
+
+        const bellDecay = isFinalStrike ? 0.68 : 0.14;
+        carrierGain.gain.setValueAtTime(0.0001, strikeTime);
+        carrierGain.gain.linearRampToValueAtTime(0.16, strikeTime + 0.0018);
+        carrierGain.gain.exponentialRampToValueAtTime(0.0005, strikeTime + bellDecay);
+
+        modulator.connect(modGain);
+        modGain.connect(carrier.frequency);
+        carrier.connect(carrierGain);
+        carrierGain.connect(ctx.destination);
+
+        modulator.start(strikeTime);
+        carrier.start(strikeTime);
+        modulator.stop(strikeTime + bellDecay + 0.01);
+        carrier.stop(strikeTime + bellDecay + 0.01);
+
+        // 2. Rayleigh Inharmonic Brass Dome Overtones (shimmering high metallic ring)
+        const domeOvertones = [
+          { ratio: 2.0, amp: 0.095, decay: isFinalStrike ? 0.52 : 0.11 },
+          { ratio: 2.756, amp: 0.065, decay: isFinalStrike ? 0.38 : 0.08 },
+          { ratio: 3.76, amp: 0.042, decay: isFinalStrike ? 0.26 : 0.06 },
+          { ratio: 5.404, amp: 0.025, decay: isFinalStrike ? 0.16 : 0.04 },
         ];
 
-        bellPartials.forEach(({ freq, amp, decay }) => {
+        for (const mode of domeOvertones) {
           const osc = ctx.createOscillator();
           const gain = ctx.createGain();
-          osc.type = idx % 3 === 0 ? 'triangle' : 'sine';
-          osc.frequency.setValueAtTime(freq, strikeTime);
-
-          gain.gain.setValueAtTime(0.001, strikeTime);
-          gain.gain.linearRampToValueAtTime(amp, strikeTime + 0.003);
-          gain.gain.exponentialRampToValueAtTime(0.0006, strikeTime + decay);
-
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f0 * mode.ratio, strikeTime);
+          gain.gain.setValueAtTime(0.0001, strikeTime);
+          gain.gain.linearRampToValueAtTime(mode.amp, strikeTime + 0.0015);
+          gain.gain.exponentialRampToValueAtTime(0.0004, strikeTime + mode.decay);
           osc.connect(gain);
           gain.connect(ctx.destination);
           osc.start(strikeTime);
-          osc.stop(strikeTime + decay + 0.01);
-        });
+          osc.stop(strikeTime + mode.decay + 0.01);
+        }
+
+        // 3. Crisp Metal Clapper Impact Transient ("TING")
+        const clickSrc = ctx.createBufferSource();
+        const clickFilter = ctx.createBiquadFilter();
+        const clickGain = ctx.createGain();
+        clickSrc.buffer = clickBuffer;
+        clickFilter.type = 'bandpass';
+        clickFilter.frequency.setValueAtTime(4900, strikeTime);
+        clickFilter.Q.setValueAtTime(3.2, strikeTime);
+        clickGain.gain.setValueAtTime(0.18, strikeTime);
+        clickGain.gain.exponentialRampToValueAtTime(0.001, strikeTime + 0.014);
+
+        clickSrc.connect(clickFilter);
+        clickFilter.connect(clickGain);
+        clickGain.connect(ctx.destination);
+        clickSrc.start(strikeTime);
       }
     } catch {
       // Ignore
@@ -922,14 +1018,18 @@ class RetroSoundEngine {
 
       const { playbackRate, postSlidePauseMs } = getContextualSpeechPace(slide);
 
-      // 1. Primary Path: Web Audio API with 1.0x Natural Pitch & 1:1 Playhead Waveform Sync
-      if (slide.audioBuffer && envelope && !this.isMuted && ctx.state === 'running') {
+      // 1. Primary Path: Web Audio API with 1.0x Original Voice & Steady Playhead Typewriter Sync
+      // Connects through voiceGainNode (gain 0 when muted, 1 when unmuted) so muting NEVER cuts off the typewriter!
+      if (slide.audioBuffer && envelope && ctx.state === 'running') {
         try {
+          const voiceGain = this.getVoiceGainNode();
+          voiceGain.gain.value = this.isMuted ? 0 : 1;
+
           const source = ctx.createBufferSource();
           source.buffer = slide.audioBuffer;
           source.playbackRate.value = playbackRate;
           this.activeVoiceSource = source;
-          source.connect(ctx.destination);
+          source.connect(voiceGain);
 
           const trimStart = envelope.trimStartSec;
           const totalWallDurationSec =
@@ -937,7 +1037,7 @@ class RetroSoundEngine {
           const startTime = ctx.currentTime;
           let finished = false;
 
-          emitAtProgress(0.01, 0.35);
+          emitAtProgress(0.01, this.isMuted ? 0 : 0.35);
 
           const finishSlide = () => {
             if (finished) return;
@@ -965,7 +1065,7 @@ class RetroSoundEngine {
             const wallElapsedSec = ctx.currentTime - startTime;
             const bufferElapsedSec = wallElapsedSec * playbackRate;
             const progress = getEnvelopeSpeechProgress(envelope, bufferElapsedSec);
-            const energy = getEnvelopeInstantVoiceEnergy(envelope, bufferElapsedSec);
+            const energy = this.isMuted ? 0 : getEnvelopeInstantVoiceEnergy(envelope, bufferElapsedSec);
             emitAtProgress(progress, energy);
 
             if (wallElapsedSec < totalWallDurationSec + 0.15) {
@@ -1016,7 +1116,7 @@ class RetroSoundEngine {
         }, postSlidePauseMs);
       };
 
-      emitAtProgress(0.01, 0.3);
+      emitAtProgress(0.01, this.isMuted ? 0 : 0.3);
 
       this.activeFallbackInterval = setInterval(() => {
         if (finishedFallback || this.playbackCancelled || this.playbackSequenceId !== seqId) {
@@ -1028,18 +1128,20 @@ class RetroSoundEngine {
           return;
         }
 
-        // If browser audio unlocks during this slide, play the ENTIRE slide audio from trimStart so no words are ever skipped!
-        if (!audioStartedMidSlide && slide.audioBuffer && !this.isMuted && ctx.state === 'running') {
+        // If browser audio unlocks during this slide, play the ENTIRE slide audio from trimStart through voiceGainNode!
+        if (!audioStartedMidSlide && slide.audioBuffer && ctx.state === 'running') {
           audioStartedMidSlide = true;
           started = performance.now();
           unlockStartTime = ctx.currentTime;
           durationMs = fullAudioDurationMs + 250;
           try {
+            const voiceGain = this.getVoiceGainNode();
+            voiceGain.gain.value = this.isMuted ? 0 : 1;
             const source = ctx.createBufferSource();
             source.buffer = slide.audioBuffer;
             source.playbackRate.value = playbackRate;
             this.activeVoiceSource = source;
-            source.connect(ctx.destination);
+            source.connect(voiceGain);
             source.onended = () => {
               finishFallbackSlide();
             };

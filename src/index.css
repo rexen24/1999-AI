@@ -4,7 +4,7 @@
   --crt-teal: #53B89A;
   --crt-teal-edge: #3F967C;
   --crt-dark: #0A261E;
-  --crt-cream: #E2F6C2;
+  --crt-cream: #F3F89D;
 }
 
 * {
@@ -46,14 +46,28 @@ body,
   font-family: 'IBM Plex Mono', monospace;
 }
 
-/* Soft pale-greenish-yellow phosphor bloom on teal with subtle CRT chromatic edge */
+/* Show-accurate warm yellowish phosphor bloom on teal CRT */
 .phosphor-text {
-  color: #E2F6C2;
+  color: #F3F89D;
   text-shadow:
-    0 0 3px rgba(226, 246, 194, 0.82),
-    0 0 10px rgba(212, 245, 176, 0.42),
-    1.5px 0 1px rgba(255, 255, 210, 0.22),
-    -1.5px 0 1px rgba(180, 240, 200, 0.22);
+    0 0 3px rgba(243, 248, 157, 0.88),
+    0 0 11px rgba(235, 244, 118, 0.45),
+    1.5px 0 1px rgba(255, 252, 165, 0.28),
+    -1.5px 0 1px rgba(210, 246, 150, 0.24);
+}
+
+/* Iconic Courage Computer Cream Box with Dark Maroon/Red Border & Text (SEARCHING / 1 ITEM / HOW TO...) */
+.courage-red-box {
+  background-color: #EAE6DF;
+  border: 3px solid #4A1C17;
+  box-shadow:
+    inset 0 0 0 1px rgba(110, 29, 20, 0.18),
+    0 0 10px rgba(10, 38, 30, 0.28);
+}
+
+.courage-red-box-text {
+  color: #6E1D14;
+  text-shadow: 0 0 1px rgba(110, 29, 20, 0.35);
 }
 
 /* Subtle CRT tube gradient and scanlines matching the cartoon monitor surface */

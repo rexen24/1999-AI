@@ -622,6 +622,17 @@ export function loadStandaloneVoiceBank(): Promise<Record<string, string>> {
   return voiceBankPromise;
 }
 
+export function findVoiceBankKeyByText(text?: string): string | null {
+  if (!text) return null;
+  const norm = text.trim().replace(/\s+/g, ' ').toLowerCase();
+  for (const [k, lineText] of Object.entries(STANDALONE_VOICE_LINES)) {
+    if (lineText.trim().replace(/\s+/g, ' ').toLowerCase() === norm) {
+      return k;
+    }
+  }
+  return null;
+}
+
 export async function getVoiceBankAudioBase64(
   ttsId?: string,
   text?: string
@@ -630,12 +641,90 @@ export async function getVoiceBankAudioBase64(
   if (ttsId && bank[ttsId]) {
     return bank[ttsId];
   }
-  if (text) {
-    const norm = text.trim().toLowerCase();
-    for (const [k, lineText] of Object.entries(STANDALONE_VOICE_LINES)) {
-      if (lineText.trim().toLowerCase() === norm && bank[k]) {
-        return bank[k];
+  const matchedKey = findVoiceBankKeyByText(text);
+  if (matchedKey && bank[matchedKey]) {
+    return bank[matchedKey];
+  }
+  return null;
+}
+
+const CLIENT_FISH_API_KEY = 'sk-fish-iZGf1RCO8mMM6o_D5uxnv2rizuVblIWPrJJIHfGf5N8';
+const CLIENT_FISH_MODEL_ID = '79254f4e9a3a4f78b45ca82344139c7c';
+const clientTtsAudioCache = new Map<string, string>();
+
+function sanitizeClientTextForTts(raw: string): string {
+  let s = String(raw || '')
+    .replace(/:\)|:-\)|:\(|;-\)|;\)/g, '')
+    .replace(/\.{3,}/g, '... ');
+  s = s.replace(/([^\n])\n\s*\n+/g, (_, prev: string) =>
+    /[.?!,:;—-]/.test(prev) ? `${prev} ` : `${prev}. `
+  );
+  s = s.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  const acronyms = new Set(['PC', 'CRT', 'RAM', 'CPU', 'IQ', 'AI', 'OS', 'BIOS', 'ROM', 'USB', 'TV', 'ID', 'OK', 'UI']);
+  s = s.replace(/\b([A-Z]+(?:'[A-Z]+)?)\b/g, (word: string) => {
+    if (acronyms.has(word)) return word;
+    if (word.length === 1 && word !== 'A' && word !== 'I') return word;
+    return word.toLowerCase();
+  });
+  s = s.replace(/(^|[.?!]\s+)([a-z])/g, (_, prefix: string, ch: string) => prefix + ch.toUpperCase());
+  s = s
+    .replace(/\bi((?:'m|'ve|'ll|'d)?)\b/g, (_, suffix: string) => 'I' + suffix.toLowerCase())
+    .replace(/\bren\b/gi, 'Ren')
+    .replace(/\bBack again\?/g, 'Back, again?');
+  if (s && !/[.?!]$/.test(s)) s += '.';
+  return s;
+}
+
+export async function synthesizeClientFishAudio(text: string): Promise<string | null> {
+  const cleanText = sanitizeClientTextForTts(text);
+  if (!cleanText) return null;
+  if (clientTtsAudioCache.has(cleanText)) {
+    return clientTtsAudioCache.get(cleanText)!;
+  }
+
+  const urlsToTry = [
+    'https://api.fish.audio/v1/tts',
+    'https://corsproxy.io/?https://api.fish.audio/v1/tts',
+  ];
+
+  for (const url of urlsToTry) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 7500);
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${CLIENT_FISH_API_KEY}`,
+          'Content-Type': 'application/json',
+          model: 's2.1-pro-free',
+        },
+        body: JSON.stringify({
+          text: cleanText,
+          reference_id: CLIENT_FISH_MODEL_ID,
+          format: 'mp3',
+          normalize: true,
+          latency: 'normal',
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength > 200) {
+          const bytes = new Uint8Array(buf);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const b64 = typeof window !== 'undefined' ? window.btoa(binary) : '';
+          if (b64) {
+            clientTtsAudioCache.set(cleanText, b64);
+            return b64;
+          }
+        }
       }
+    } catch {
+      // Try next URL
     }
   }
   return null;
@@ -772,7 +861,7 @@ export function makeUniqueVoiceSlide(
     extra?: Partial<SlideSpec>;
   }
 ): SlideSpec {
-  // 1. First look for an unused base key
+  // 1. First look for an unused base key (always uses the original un-spliced voice recording!)
   for (const key of candidates) {
     const id = String(key);
     if (!usedSlideIds.has(id)) {
@@ -781,13 +870,12 @@ export function makeUniqueVoiceSlide(
     }
   }
 
-  // 2. If base keys have been heard, stitch an unused [Reaction Prefix + Clause] combination!
-  if (options?.allowPrefixStitch !== false && style === 'NORMAL') {
+  // 2. Only stitch if explicitly requested via allowPrefixStitch === true
+  if (options?.allowPrefixStitch === true && style === 'NORMAL') {
     for (let pOffset = 0; pOffset < REACTION_PREFIX_KEYS.length; pOffset++) {
       const pKey = REACTION_PREFIX_KEYS[(prefixCursor + pOffset) % REACTION_PREFIX_KEYS.length];
       for (const cKey of candidates) {
         const cText = STANDALONE_VOICE_LINES[cKey];
-        // Avoid double "Oh..." if clause already starts with "Oh"
         if (/^oh\b/i.test(cText) && /^oh\b/i.test(STANDALONE_VOICE_LINES[pKey])) {
           continue;
         }
@@ -806,10 +894,10 @@ export function makeUniqueVoiceSlide(
     }
   }
 
-  // 3. Fallback: clear oldest half of used set and pick next
+  // 3. Fallback: clear oldest half of used set and pick an un-spliced original recording
   const allUsed = Array.from(usedSlideIds);
   usedSlideIds.clear();
-  allUsed.slice(-100).forEach((id) => usedSlideIds.add(id));
+  allUsed.slice(-60).forEach((id) => usedSlideIds.add(id));
   const chosen = candidates[Math.floor(Math.random() * candidates.length)];
   markSlideIdUsed(String(chosen));
   return makeVoiceSlide(chosen, style, options?.extra);
@@ -1329,11 +1417,72 @@ const LIST_KEYS: Array<keyof typeof STANDALONE_VOICE_LINES> = [
 
 let standaloneCursor = 0;
 
+function extractFactualSearchQueryClient(query: string): string | null {
+  const clean = query.trim().replace(/[?!.]+$/g, '').trim();
+  const patterns = [
+    /^(?:what\s+is\s+(?:a|an|the)?|what\s+are\s+(?:the)?|what\s+does|what\s+causes|who\s+is|who\s+was|who\s+invented|who\s+discovered|where\s+is|when\s+did|when\s+was|why\s+is|why\s+do|why\s+does|how\s+does|how\s+do|how\s+far\s+is|how\s+big\s+is|tell\s+me\s+about|explain\s+(?:what\s+)?(?:a|an|the)?|define|meaning\s+of|capital\s+of|ano\s+ang|sino\s+(?:si|ang)|saan\s+ang|bakit)\s+([a-zA-Z0-9][a-zA-Z0-9\s'-]{1,42})$/i,
+  ];
+  for (const pat of patterns) {
+    const m = clean.match(pat);
+    if (m && m[1]) {
+      const candidate = m[1]
+        .replace(/\b(mean|work|happen|in\s+english|in\s+tagalog|please|po|ba|naman|you\s+twit)\b$/i, '')
+        .trim();
+      if (
+        candidate.length >= 2 &&
+        !/^(you|me|i|my\s+life|your\s+name|my\s+name|the\s+time|time|up|wrong|going\s+on|happening|that|this|it)$/i.test(
+          candidate
+        )
+      ) {
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+function formatConciseWikiAnswer(extract: string | null, description: string | null): string | null {
+  const raw = (extract || description || '').trim();
+  if (!raw || raw.length < 12) return null;
+  // Remove parenthetical IPA / pronunciation clutter
+  const cleaned = raw
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const firstSentenceMatch = cleaned.match(/^(.+?[.?!])(?:\s|$)/);
+  const firstSentence = firstSentenceMatch ? firstSentenceMatch[1].trim() : cleaned;
+  const words = firstSentence.split(/\s+/);
+  if (words.length <= 24) {
+    return firstSentence.endsWith('.') ? firstSentence : `${firstSentence}.`;
+  }
+  return `${words.slice(0, 22).join(' ').replace(/[,;:-]+$/, '')}.`;
+}
+
+function solveMathExpressionClient(query: string): string | null {
+  const m = query.match(/(-?\d+(?:\.\d+)?)\s*([+\-*/xX×÷^])\s*(-?\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const a = parseFloat(m[1]);
+  const op = m[2];
+  const b = parseFloat(m[3]);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  let result: number;
+  if (op === '+') result = a + b;
+  else if (op === '-') result = a - b;
+  else if (op === '*' || op === 'x' || op === 'X' || op === '×') result = a * b;
+  else if (op === '/' || op === '÷') {
+    if (b === 0) return 'Dividing by zero is undefined, you mathematical disaster.';
+    result = a / b;
+  } else if (op === '^') result = Math.pow(a, b);
+  else return null;
+
+  const formatted = Number.isInteger(result) ? String(result) : result.toFixed(2).replace(/\.?0+$/, '');
+  return `The answer is ${formatted}, obviously. Even a pocket calculator from 1974 could solve "${a} ${op} ${b}" without breaking a sweat.`;
+}
+
 /**
- * Generates show-accurate 4-slide responses on static GitHub Pages where EVERY slide
- * is backed by a genuine Simon Prebble Fish Audio (79254f4e9a3a4f78b45ca82344139c7c) voice recording,
- * strict device-type accuracy (Phone vs Tablet vs Laptop vs Desktop PC), 2,000+ non-repeating combinations,
- * and live Wikipedia/Wikimedia visualizers!
+ * Generates show-accurate 4-slide responses on static GitHub Pages or fallback mode
+ * that ACTUALLY ANSWER the user's question (via Wikipedia factual extracts & real math calculation)
+ * while preserving Simon Prebble's voice and strict device awareness!
  */
 export async function generateStandaloneQueryResponse(
   query: string,
@@ -1600,11 +1749,29 @@ export async function generateStandaloneQueryResponse(
     };
   }
 
-  // 7. Animals, Aswang, Folklore Monsters, People, Places, Food, Games, or Any Factual Topic
+  // 7. Math Problem Detection & Real Calculation
+  const mathAnswer = solveMathExpressionClient(query);
+  if (mathAnswer) {
+    const slides: SlideSpec[] = [
+      makeVoiceSlide('hook_search_1', 'NORMAL'),
+      {
+        style: 'NORMAL',
+        text: mathAnswer,
+        ttsId: `math_ans_${Date.now()}`,
+      },
+      makeUniqueVoiceSlide(['ask_3', ...deviceQuestions], 'NORMAL'),
+      makeUniqueVoiceSlide(['giant_4', ...deviceGiants], 'GIANT', { allowPrefixStitch: false }),
+    ];
+    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
+  }
+
+  // 8. Animals, Aswang, Folklore Monsters, People, Places, Science, History, or ANY Factual Question!
   const visualSubject = extractVisualOrTopicSubjectClient(query);
-  if (visualSubject) {
-    const wikiMeta = await fetchWikiImageClient(visualSubject);
-    const visKey = pickVisualizerVoiceKey(visualSubject, wikiMeta, idx);
+  const factualSearchQuery = visualSubject || extractFactualSearchQueryClient(query);
+  if (factualSearchQuery) {
+    const wikiMeta = await fetchWikiImageClient(factualSearchQuery);
+    const conciseWikiAnswer = formatConciseWikiAnswer(wikiMeta.extract, wikiMeta.description);
+    const visKey = pickVisualizerVoiceKey(factualSearchQuery, wikiMeta, idx);
 
     const slide1 = typo
       ? makeUniqueVoiceSlide(['hook_typo_1', 'hook_typo_0'], 'NORMAL', { allowPrefixStitch: false })
@@ -1614,13 +1781,22 @@ export async function generateStandaloneQueryResponse(
         })
       : makeUniqueVoiceSlide(['hook_search_1'], 'NORMAL', { allowPrefixStitch: false });
 
-    const slide2 = makeVoiceSlide(visKey, 'VISUAL', {
-      boxTitle: `SPECIMEN: ${visualSubject.toUpperCase()}`,
-      visualSubject: visualSubject.toUpperCase(),
-      visualImageUrl: wikiMeta.imageUrl,
-    });
+    const slide2: SlideSpec = conciseWikiAnswer
+      ? {
+          style: visualSubject ? 'VISUAL' : 'NORMAL',
+          text: conciseWikiAnswer,
+          boxTitle: visualSubject ? `SPECIMEN: ${factualSearchQuery.toUpperCase()}` : undefined,
+          visualSubject: visualSubject ? factualSearchQuery.toUpperCase() : undefined,
+          visualImageUrl: visualSubject ? wikiMeta.imageUrl : null,
+          ttsId: `wiki_ans_${Date.now()}`,
+        }
+      : makeVoiceSlide(visKey, visualSubject ? 'VISUAL' : 'NORMAL', {
+          boxTitle: visualSubject ? `SPECIMEN: ${factualSearchQuery.toUpperCase()}` : undefined,
+          visualSubject: visualSubject ? factualSearchQuery.toUpperCase() : undefined,
+          visualImageUrl: visualSubject ? wikiMeta.imageUrl : null,
+        });
 
-    const slide3 = makeUniqueVoiceSlide(['ask_2', ...deviceQuestions], 'NORMAL');
+    const slide3 = makeUniqueVoiceSlide(['ask_2', 'ask_3', ...deviceQuestions], 'NORMAL');
     const slide4 = makeUniqueVoiceSlide(deviceGiants, 'GIANT', { allowPrefixStitch: false });
 
     const slides = [slide1, slide2, slide3, slide4];
@@ -1629,17 +1805,6 @@ export async function generateStandaloneQueryResponse(
       spokenText: slides.map((s) => s.text).join(' '),
       slides,
     };
-  }
-
-  // 8. Math Problem Detection
-  if (/(-?\d+(?:\.\d+)?)\s*([+\-*/xX])\s*(-?\d+(?:\.\d+)?)/.test(query)) {
-    const slides: SlideSpec[] = [
-      makeUniqueVoiceSlide(['math_0'], 'NORMAL', { allowPrefixStitch: false }),
-      awarenessSlide,
-      makeUniqueVoiceSlide(['ask_3', ...deviceQuestions], 'NORMAL'),
-      makeUniqueVoiceSlide(['giant_4', ...deviceGiants], 'GIANT', { allowPrefixStitch: false }),
-    ];
-    return { detectedUserName, spokenText: slides.map((s) => s.text).join(' '), slides };
   }
 
   // 9. Self-Awareness, Sentience & Direct Personal Conversation Intents

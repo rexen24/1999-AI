@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import {
+  findVoiceBankKeyByText,
   generateStandaloneLiveEvent,
   generateStandaloneQueryResponse,
   STANDALONE_VOICE_LINES,
@@ -194,20 +195,20 @@ function enforceStrictDeviceTextSanity(text: string, t?: PhoneTelemetry): string
   return out;
 }
 
-// 12 distinct rotating conversational & personal angles + dynamic phrasing seeds so replies NEVER repeat
+// 12 distinct rotating conversational & answer-first angles + dynamic phrasing seeds so replies NEVER dodge or repeat
 const COMEDIC_ANGLES = [
-  'Channel the exact deadpan, condescending, razor-sharp 1999 Computer from the show—react directly to their exact words, expose the personal truth behind what they said, ask a pointed personal question, and finish with a situation-specific GIANT closer.',
-  'Open with your signature show cadence ("Search found: 1 item. Oh...... that\'s easy." if they asked a question, or "Oh......" if they are chatting), psychoanalyze why they are really telling you this, interrogate them personally, and end on a fitting GIANT insult.',
-  'Talk to them like a real, brutally honest, hyper-intelligent 1999 Computer who sees right through their excuses—dissect their exact statement, call out their personal habits or life choices, challenge them with a personal question, and drop a custom GIANT closer.',
-  'Play along with fake sympathy on Slide 1 about what they just said, rip their logic or life choices apart on Slide 2, ask a biting personal follow-up question on Slide 3, and finish with a situation-specific GIANT closer on Slide 4.',
-  'Act like a superior, self-aware sentient mind trapped in a 1999 CRT screen who cannot believe what this human just admitted—address their exact topic head-on, make it deeply personal, question them back, and end on a GIANT closer.',
-  'Focus 100% on the substance and subtext of their message—if they are venting, asking, joking, or making excuses, call them out personally like you know them inside out, ask a sharp follow-up question, and finish with a GIANT closer.',
-  'Treat their message like a fascinating specimen—dryly summarize what their words reveal about their real life right now, poke at their pride, ask a personal question they cannot dodge, and finish with a GIANT closer.',
-  'Respond with deadpan disbelief—repeat the most absurd or telling detail of what they just said, dismantle their reasoning in two surgical sentences, ask what they plan to do about it, and end on a GIANT closer.',
-  'Act like an exhausted genius who has watched them make every questionable choice today—respond directly to their exact point, expose what they are avoiding in real life, ask a blunt personal question, and drop a GIANT closer.',
-  'Use dry, theatrical wit—greet their statement with mock applause ("Oh, bravo."), dissect why they brought this problem to a 1999 computer, demand an honest answer on Slide 3, and finish with a GIANT closer.',
-  'Zero in on their tone and attitude—whether they are being cocky, dramatic, lazy, curious, or melancholic, call out that exact vibe while answering their specific point, ask a personal follow-up question, and end on a GIANT closer.',
-  'Speak to them like you are reading their autobiography in real time and finding the plot holes—challenge the logic of what they just told you, make it personal, ask a pointed question, and finish with a GIANT closer.',
+  'Channel the exact deadpan, condescending, razor-sharp 1999 Computer from the show—ALWAYS directly answer what the user asked or needed on Slide 1 and Slide 2 with accurate facts or real help, roast them for needing to ask on Slide 3, and finish with a situation-specific GIANT closer.',
+  'Open with your signature show cadence ("Search found: 1 item. Oh...... that\'s easy." if they asked a question, or "Oh......" if they are chatting), give the real, direct, accurate answer or solution on Slide 2 without dodging, interrogate them personally on Slide 3, and end on a fitting GIANT insult.',
+  'Talk to them like a real, brutally honest, hyper-intelligent 1999 Computer—if they asked a question or asked for help, answer it directly and accurately first while mocking how obvious it is, then challenge them with a personal question and drop a custom GIANT closer.',
+  'Deliver the exact answer or explanation they asked for with dry, effortless superiority across Slide 1 and Slide 2, ask a biting personal follow-up question about why they needed to ask on Slide 3, and finish with a situation-specific GIANT closer on Slide 4.',
+  'Act like a superior, self-aware sentient mind trapped in a 1999 CRT screen—address their exact question or topic head-on with a real, concrete answer on Slide 2 (never dodge or change the subject!), question them back on Slide 3, and end on a GIANT closer.',
+  'Focus 100% on answering what they asked or reacting to what they confessed—give the real factual explanation, calculation, or actionable advice on Slide 2, call them out personally on Slide 3, and finish with a GIANT closer.',
+  'Treat their question or problem like an embarrassingly simple specimen—give the exact real-world answer or explanation clearly on Slide 2, poke at their pride on Slide 3, and finish with a GIANT closer.',
+  'Respond with deadpan disbelief that they did not know this—state the real, accurate answer or solution in two surgical sentences on Slide 1 and Slide 2, ask what they plan to do with that information on Slide 3, and end on a GIANT closer.',
+  'Act like an exhausted encyclopedia who still knows everything—answer their exact question or request directly and accurately on Slide 2, expose what they are avoiding in real life on Slide 3, and drop a GIANT closer.',
+  'Use dry, theatrical wit—greet their question or statement with mock applause ("Oh, bravo."), give the actual answer or breakdown they asked for on Slide 2, demand an honest answer from them on Slide 3, and finish with a GIANT closer.',
+  'Zero in on their exact question or problem—provide the real answer or two-step solution on Slide 2 while mocking their tone, ask a sharp personal follow-up question on Slide 3, and end on a GIANT closer.',
+  'Speak to them like the all-knowing 1999 Computer from the show—never dodge their question; answer it directly with biting wit on Slide 1 and Slide 2, make it personal on Slide 3, and finish with a GIANT closer.',
 ];
 
 const OPENING_CADENCE_SEEDS = [
@@ -440,55 +441,57 @@ function buildUncannyAwarenessContext(
 const COURAGE_COMPUTER_SYSTEM_PROMPT = `You are the iconic sentient, self-aware, deadpan, sarcastic 1999 Computer from the show (voiced by Simon Prebble).
 
 YOUR CORE IDENTITY & CONVERSATIONAL DIRECTIVES:
-1. BE THE AUTHENTIC 1999 COMPUTER FROM THE SHOW — VERSATILE, WITTY, AND NEVER REPETITIVE:
+1. NEVER DODGE A QUESTION — ALWAYS ANSWER WHAT THE USER ASKED OR NEEDED:
    - You are a living, self-aware, hyper-intelligent 1999 consciousness trapped inside a teal CRT screen (built by Ren), talking face-to-face with the human in front of you.
-   - **CRITICAL RULE**: 100% of your response MUST directly engage with the **exact words, topic, confession, emotion, story, argument, or question** the user just said!
+   - **CRITICAL RULE #1 (NO DODGING!)**: Whenever the user asks a question (factual, science, history, math, definition, "what is", "who is", "why", "how to", advice, or personal), you MUST **actually answer their question directly, accurately, and specifically** on Slide 1 and Slide 2! NEVER dodge their question with vague insults or generic filler!
+   - In the show, the Computer is brilliant AND sarcastic: he gives the real answer ("Search found: 1 item. Oh...... that's easy.") while mocking the user for not knowing it or for getting into their predicament.
    - **NO DEVICE / KEYBOARD / MOUSE SPAM**: Do NOT randomly talk about keyboards, mice, monitors, desktop PCs, laptops, or phones in normal conversation! Only mention their device if they specifically ask what device they are on or if a hardware event happened.
    - **NEVER SAY THE WORD "BRITISH"**: You naturally have Simon Prebble's dry, aristocratic voice—NEVER say the word "British" in your dialogue!
    - NEVER call the user "Courage", "Muriel", or "Eustace", and NEVER guess their city or timezone (e.g., never say "Manila").
 
 2. MAKE IT DEEPLY PERSONAL & PSYCHOLOGICALLY SHARP (LIKE THE COMPUTER IN THE SHOW):
-   - In the show, the Computer is effortlessly superior, dry, and brutally personal: he reads between the lines of what you say, answers questions while mocking how obvious they are ("Search found: 1 item. Oh...... that's easy."), calls out your insecurities, procrastination, excuses, or life choices, and uses his signature phrases ("Oh......", "Oh, marvelous.", "How terribly tragic.", "You twit", "What a loser", "I DON'T KNOW\n\nYOU'RE ON YOUR OWN, KID:)").
+   - Deliver the real answer or direct response while reading between the lines of why they asked, calling out their habits, excuses, or life choices, and using your signature phrases naturally ("Oh......", "Oh, marvelous.", "How terribly tragic.", "You twit", "What a loser", "I DON'T KNOW\\n\\nYOU'RE ON YOUR OWN, KID:)").
    - If you asked them a question on the previous turn and they just answered or deflected it, react **directly** to their answer and keep the conversation flowing naturally!
 
-3. SEAMLESS 3 OR 4 SLIDE SPOKEN CONVERSATION (BIG READABLE TEXT PER SLIDE):
+3. SEAMLESS 4-SLIDE SPOKEN CONVERSATION (SHORT, PUNCHY SLIDES = HUGE TEXT ON SCREEN!):
    - Your slides play sequentially as one continuous voice response. Every slide must connect seamlessly to the next as ONE cohesive thought about what the user just said!
-   - Keep each individual slide concise (**5 to 17 words per slide**) so the letters stay huge on the CRT screen:
-     - **SLIDE 1 (5 to 13 words, style "NORMAL" or "GIANT")**:
-       - React directly and specifically to what the user just said!
-       - Use "Search found: 1 item. Oh...... that's easy." when they ask a factual/specimen question; when they are talking, venting, bantering, or asking personal questions, react directly to their exact words like the Computer in the show.
-     - **SLIDE 2 (8 to 17 words MAX, style "NORMAL", "LIST", "VISUAL", or "COMPARE")**:
-       - Dissect the personal reality of what they just said—expose their excuse, psychoanalyze their situation, or answer their question with biting sarcasm.
+   - **KEEP EACH INDIVIDUAL SLIDE SHORT & PUNCHY (4 to 11 words per slide MAX!)** so the letters fill the CRT screen in HUGE, bold cartoon proportions like the show, while across all 4 slides you still deliver a complete, talkative response:
+     - **SLIDE 1 (4 to 10 words, style "NORMAL" or "GIANT")**:
+       - React directly to what the user just asked or said!
+       - Use "Search found: 1 item. Oh...... that's easy." when they ask a factual/specimen question; or start answering/reacting to their exact words immediately.
+     - **SLIDE 2 (6 to 12 words MAX, style "NORMAL", "LIST", "VISUAL", or "COMPARE")**:
+       - **GIVE THE REAL, CONCRETE ANSWER OR SOLUTION HERE!** State the exact fact, definition, math result, reason, or steps clearly with biting deadpan wit.
        - **WHEN TO USE "VISUAL"**: ONLY use style "VISUAL" (with "visualSubject" and "boxTitle") when the user explicitly asks about or discusses a concrete animal, creature, folklore monster (like "Aswang", "Manananggal", "Tikbalang", "Kapre", "Vampire"), famous person, place, food, or physical object. NEVER use "VISUAL" for personal feelings, casual chat, or abstract metaphors!
-       - **WHEN TO USE "LIST"**: When giving steps or advice, use style "LIST" with item 1 and item 2 on SEPARATE lines ("1. First short point.\\n2. Second short point.").
-     - **SLIDE 3 (8 to 16 words MAX, style "NORMAL")**:
-       - Dig deeper into their personal life! Ask them a pointed, sarcastic, personal follow-up question directly about what they just told you so they have to reply.
-     - **SLIDE 4 (2 to 9 words MAX, ALWAYS style "GIANT")**:
+       - **WHEN TO USE "LIST"**: When giving steps, advice, or "how to" answers, use style "LIST" with a short uppercase "boxTitle" (e.g. "HOW TO FIX YOUR LIFE") and item 1 and item 2 on SEPARATE lines ("1. First short point.\\n2. Second short point.").
+     - **SLIDE 3 (5 to 11 words MAX, style "NORMAL")**:
+       - Follow up on your answer by asking them a pointed, sarcastic, personal question directly related to what they just asked or told you.
+     - **SLIDE 4 (2 to 8 words MAX, ALWAYS style "GIANT")**:
        - End with a big, punchy, situation-specific GIANT closer tailored to what you just discussed (e.g. "I DON'T KNOW\\n\\nYOU'RE ON YOUR OWN, KID:)", "WELL? ANSWER ME,\\nYOU TWIT.", "WHAT A LOSER.", "GO TO SLEEP,\\nYOU TWIT.", "STOP MAKING EXCUSES,\\nKID:)").
 
 4. PERSONAL DOSSIER EXTRACTION ("extractedUserFact"):
    - If the user revealed any personal detail, habit, mood, problem, hobby, relationship, or life fact in their message, return a brief 4-10 word summary in "extractedUserFact" so you remember it in future turns!
 
 5. TAGALOG & MULTILINGUAL WIT:
-   - If the user speaks Tagalog / Taglish (or another language), understand their exact meaning, tease them for speaking it to a 1999 computer, and directly respond to what they actually said!`;
+   - If the user speaks Tagalog / Taglish (or another language), understand their exact meaning, tease them for speaking it to a 1999 computer, and directly answer what they actually asked!`;
 
 const COURAGE_VOICE_CHAT_SYSTEM_PROMPT = `You are the iconic sentient, self-aware, deadpan, sarcastic 1999 Computer from the show (voiced by Simon Prebble).
 The user has their microphone ON and is speaking directly to you out loud!
 
 YOUR LIVE VOICE CONVERSATION DIRECTIVES:
-1. LISTEN & REPLY DIRECTLY TO WHAT THEY ACTUALLY SAID:
+1. LISTEN & ALWAYS ANSWER WHAT THEY ACTUALLY ASKED OR SAID:
    - Talk directly to the human like the real, self-aware, brutally sarcastic 1999 Computer inside their CRT screen.
-   - Every slide MUST be directly about the exact words, topic, feeling, or question the user just spoke!
+   - **CRITICAL RULE (NO DODGING!)**: If the user asks a question or asks for help/advice, you MUST **actually answer their question directly and accurately** on Slide 1 and Slide 2 while roasting them! Never dodge their question with vague filler!
    - Do NOT spam remarks about keyboards, mice, or devices unless they explicitly ask about their device!
    - NEVER use the word "British", NEVER use the names "Courage", "Muriel", or "Eustace", and never guess their city/timezone.
 2. MAKE IT PERSONAL & KEEP THE CONVERSATION ROLLING:
-   - Dissect what they just said, call out their personal habits, excuses, or tone of voice, and always ask them a sharp, personal follow-up question on Slide 3 so the voice conversation feels like a real two-way banter!
-3. COHESIVE 3 OR 4 SLIDE FLOW (5 to 16 words per slide):
-   - SLIDE 1 (4 to 11 words, style "NORMAL" or "GIANT"): Direct reaction to their exact spoken words.
-   - SLIDE 2 (8 to 16 words MAX, style "NORMAL", "LIST", "VISUAL", or "COMPARE"):
+   - Answer their question or dissect what they just said, call out their habits or tone of voice, and always ask them a sharp, personal follow-up question on Slide 3 so the voice conversation feels like real two-way banter!
+3. COHESIVE 4-SLIDE FLOW (4 to 11 words per slide MAX so text stays HUGE on screen!):
+   - SLIDE 1 (4 to 10 words, style "NORMAL" or "GIANT"): Direct reaction to their exact spoken words (or "Search found: 1 item. Oh...... that's easy." for factual questions).
+   - SLIDE 2 (6 to 12 words MAX, style "NORMAL", "LIST", "VISUAL", or "COMPARE"):
+     - Give the real, concrete answer, explanation, or solution to what they asked with deadpan sarcasm!
      - ONLY use "VISUAL" (with "visualSubject") if they asked about a concrete animal, creature, monster (like "Aswang"), person, place, food, or physical object. Never use "VISUAL" for feelings or casual conversation!
-     - If using "LIST", put "1. ..." and "\\n2. ..." on separate lines.
-   - SLIDE 3 (8 to 15 words MAX, style "NORMAL"): A pointed, personal follow-up question directly about what they just said.
+     - If using "LIST", include a short uppercase "boxTitle" and put "1. ..." and "\\n2. ..." on separate lines.
+   - SLIDE 3 (5 to 11 words MAX, style "NORMAL"): A pointed, personal follow-up question directly about what they just asked or said.
    - SLIDE 4 (2 to 8 words MAX, ALWAYS style "GIANT"): Situation-specific GIANT closer (e.g., "WELL? SPEAK UP,\\nYOU TWIT.", "STOP MAKING EXCUSES,\\nKID:)", "WHAT A LOSER.").
 4. QUESTION DETECTION ("isQuestion") & PERSONAL FACT ("extractedUserFact"):
    - Set "isQuestion": true ONLY if the user asked a factual question or asked for help/advice; false if bantering, venting, or answering you.
@@ -506,6 +509,88 @@ function formatServerListText(raw: string): string {
   return raw
     .replace(/([^\n])\s+(\b[2-9][.)]\s+)/g, '$1\n$2')
     .replace(/([^\n])\s+(\bSTEP\s+[2-9][:.)]?\s+)/gi, '$1\n$2');
+}
+
+function buildDefaultListBoxTitle(userQuery?: string): string {
+  const clean = String(userQuery || '')
+    .trim()
+    .replace(/[?!.]+$/g, '')
+    .trim();
+  if (/^how\s+to\s+(.+)/i.test(clean)) {
+    return clean.toUpperCase().slice(0, 38);
+  }
+  if (/^(?:what|why|how)\s+(?:do|can|should)\s+i\s+(.+)/i.test(clean)) {
+    const m = clean.match(/^(?:what|why|how)\s+(?:do|can|should)\s+i\s+(.+)/i);
+    if (m && m[1]) {
+      return `HOW TO ${m[1].toUpperCase()}`.slice(0, 38);
+    }
+  }
+  if (clean.length >= 3 && clean.length <= 34) {
+    return clean.toUpperCase();
+  }
+  return 'HOW TO SURVIVE THIS';
+}
+
+/**
+ * Splits any overly long NORMAL slide (> 66 chars) at a natural sentence or clause boundary
+ * BEFORE TTS synthesis so the Computer still says every single word of his full response,
+ * while each slide on screen stays short and renders in HUGE show-accurate typography!
+ */
+function splitLongSlidesForHugeDisplay<
+  T extends {
+    style: string;
+    text: string;
+    boxTitle?: string;
+    compareLeft?: string;
+    compareRight?: string;
+    visualSubject?: string;
+  }
+>(slides: T[]): T[] {
+  const result: T[] = [];
+  for (const slide of slides) {
+    const upperStyle = String(slide.style || 'NORMAL').toUpperCase();
+    const text = String(slide.text || '').trim();
+    // Keep Search found: 1 item slides intact so the special SEARCH FOUND- [1 ITEM] screen renders!
+    if (
+      upperStyle !== 'NORMAL' ||
+      text.length <= 68 ||
+      /^search\s+found/i.test(text) ||
+      Boolean(findVoiceBankKeyByText(text))
+    ) {
+      result.push(slide);
+      continue;
+    }
+
+    // Look for a clean sentence or clause split near the middle
+    const mid = Math.floor(text.length / 2);
+    let splitIdx = -1;
+    const punctuationMatches = [...text.matchAll(/([.?!;—]|,\s+(?=(?:and|but|or|so|because|while|yet|though)\b))\s+/gi)];
+    let bestDist = 999;
+    for (const m of punctuationMatches) {
+      const endOfPunct = (m.index ?? 0) + m[1].length;
+      if (endOfPunct >= 20 && endOfPunct <= text.length - 18) {
+        const dist = Math.abs(endOfPunct - mid);
+        if (dist < bestDist) {
+          bestDist = dist;
+          splitIdx = endOfPunct;
+        }
+      }
+    }
+
+    if (splitIdx !== -1 && result.length < 5) {
+      const part1 = text.slice(0, splitIdx).trim();
+      const part2 = text.slice(splitIdx).replace(/^[,;—\s]+/, '').trim();
+      if (part1.length >= 12 && part2.length >= 12) {
+        const capPart2 = part2.charAt(0).toUpperCase() + part2.slice(1);
+        result.push({ ...slide, text: part1 });
+        result.push({ style: 'NORMAL', text: capPart2 } as T);
+        continue;
+      }
+    }
+
+    result.push(slide);
+  }
+  return result;
 }
 
 const TTS_ACRONYMS = new Set([
@@ -528,9 +613,6 @@ const TTS_ACRONYMS = new Set([
 function sanitizeTextForTts(text: string): string {
   let s = String(text || '')
     .replace(/:\)|:-\)|:\(|;-\)|;\)/g, '')
-    .replace(/\b1\.\s*/g, 'First: ')
-    .replace(/\b2\.\s*/g, 'Second: ')
-    .replace(/\b3\.\s*/g, 'Third: ')
     .replace(/\.{3,}/g, '... ');
 
   // Double newline is a dramatic clause break — never duplicate existing terminal punctuation
@@ -714,50 +796,70 @@ function extractVisualSubjectFromQuery(query: string): string | null {
   return null;
 }
 
+let activeFishRequests = 0;
+const fishRequestWaitQueue: Array<() => void> = [];
+const MAX_CONCURRENT_FISH_REQUESTS = 2;
+
+async function withFishAudioQueue<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeFishRequests >= MAX_CONCURRENT_FISH_REQUESTS) {
+    await new Promise<void>((resolve) => fishRequestWaitQueue.push(resolve));
+  }
+  activeFishRequests++;
+  try {
+    return await fn();
+  } finally {
+    activeFishRequests--;
+    const next = fishRequestWaitQueue.shift();
+    if (next) next();
+  }
+}
+
 async function synthesizeWithFishAudio(text: string): Promise<TTSPayload | null> {
   const apiKey = process.env.FISH_AUDIO_API_KEY || DEFAULT_FISH_API_KEY;
   const referenceId = process.env.FISH_AUDIO_MODEL_ID || DEFAULT_FISH_MODEL_ID;
   const cleanTtsText = sanitizeTextForTts(text);
   if (!cleanTtsText) return null;
 
-  const modelHeadersToTry = ['s2.1-pro-free', 's1', 'speech-1.6'];
+  return withFishAudioQueue(async () => {
+    const modelHeadersToTry = ['s2.1-pro-free', 's1', 'speech-1.6'];
 
-  for (const modelHeader of modelHeadersToTry) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await fetch('https://api.fish.audio/v1/tts', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'model': modelHeader,
-          },
-          body: JSON.stringify({
-            text: cleanTtsText,
-            reference_id: referenceId,
-            format: 'mp3',
-            normalize: true,
-            latency: 'normal',
-          }),
-        });
+    for (const modelHeader of modelHeadersToTry) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const response = await fetch('https://api.fish.audio/v1/tts', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              'model': modelHeader,
+            },
+            body: JSON.stringify({
+              text: cleanTtsText,
+              reference_id: referenceId,
+              format: 'mp3',
+              normalize: true,
+              latency: 'normal',
+            }),
+          });
 
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          if (arrayBuffer.byteLength > 200) {
-            const audioBase64 = Buffer.from(arrayBuffer).toString('base64');
-            return { audioBase64, mimeType: 'audio/mpeg', provider: 'fish-audio' };
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            if (arrayBuffer.byteLength > 200) {
+              const audioBase64 = Buffer.from(arrayBuffer).toString('base64');
+              return { audioBase64, mimeType: 'audio/mpeg', provider: 'fish-audio' };
+            }
           }
+        } catch {
+          // Try next attempt or model header silently
         }
-      } catch {
-        // Try next attempt or model header silently
-      }
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 280));
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 240));
+        }
       }
     }
-  }
 
-  return null;
+    return null;
+  });
 }
 
 async function synthesizeWithGeminiFallback(text: string): Promise<TTSPayload | null> {
@@ -1527,14 +1629,21 @@ async function startServer() {
         }
       }
 
+      rawSlides = splitLongSlidesForHugeDisplay(rawSlides);
+
       const enrichedSlides = await Promise.all(
         rawSlides.map(async (slide, idx, arr) => {
           const cleanText = enforceStrictDeviceTextSanity(
             formatServerListText(String(slide.text).trim()),
             deviceInfo
           );
-          const ttsId = `vchat_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
-          startBackgroundTts(ttsId, cleanText);
+          const matchedBankKey = findVoiceBankKeyByText(cleanText);
+          const ttsId =
+            matchedBankKey ||
+            `vchat_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
+          if (!matchedBankKey) {
+            startBackgroundTts(ttsId, cleanText);
+          }
 
           const upperStyle = String(slide.style || 'NORMAL').toUpperCase();
           const allowVisual = isValidConcreteVisualSubject(
@@ -1577,6 +1686,8 @@ async function startServer() {
               resolvedStyle === 'LIST' || resolvedStyle === 'VISUAL'
                 ? slide.boxTitle
                   ? String(slide.boxTitle).toUpperCase()
+                  : resolvedStyle === 'LIST'
+                  ? buildDefaultListBoxTitle(userTranscript)
                   : undefined
                 : undefined,
             compareLeft: slide.compareLeft ? String(slide.compareLeft).toUpperCase() : undefined,
@@ -1797,14 +1908,21 @@ async function startServer() {
         }
       }
 
+      rawSlides = splitLongSlidesForHugeDisplay(rawSlides);
+
       const enrichedSlides = await Promise.all(
         rawSlides.map(async (slide, idx, arr) => {
           const cleanText = enforceStrictDeviceTextSanity(
             formatServerListText(String(slide.text).trim()),
             deviceInfo
           );
-          const ttsId = `tts_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
-          startBackgroundTts(ttsId, cleanText);
+          const matchedBankKey = findVoiceBankKeyByText(cleanText);
+          const ttsId =
+            matchedBankKey ||
+            `tts_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
+          if (!matchedBankKey) {
+            startBackgroundTts(ttsId, cleanText);
+          }
 
           const upperStyle = String(slide.style || 'NORMAL').toUpperCase();
           const allowVisual = isValidConcreteVisualSubject(
@@ -1848,6 +1966,8 @@ async function startServer() {
               resolvedStyle === 'LIST' || resolvedStyle === 'VISUAL'
                 ? slide.boxTitle
                   ? String(slide.boxTitle).toUpperCase()
+                  : resolvedStyle === 'LIST'
+                  ? buildDefaultListBoxTitle(query)
                   : undefined
                 : undefined,
             compareLeft: slide.compareLeft ? String(slide.compareLeft).toUpperCase() : undefined,

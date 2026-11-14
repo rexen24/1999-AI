@@ -20,7 +20,8 @@ import {
   generateStandaloneBootSlides,
   getVoiceBankAudioBase64,
   getCompoundVoiceBankParts,
-  resolveFallbackVoiceBankSlide,
+  findVoiceBankKeyByText,
+  synthesizeClientFishAudio,
   loadStandaloneVoiceBank,
   STANDALONE_VOICE_LINES,
   StrictDeviceFormFactor,
@@ -350,7 +351,7 @@ const RetroSpecimenGraphic: React.FC<{ label: string }> = ({ label }) => {
   return (
     <svg
       viewBox="0 0 120 90"
-      className="w-full h-full stroke-[#E2F6C2] fill-none"
+      className="w-full h-full stroke-[#F3F89D] fill-none"
       strokeWidth="2.4"
     >
       {/* Animated CRT Radar / Target Sweep Ring */}
@@ -364,32 +365,32 @@ const RetroSpecimenGraphic: React.FC<{ label: string }> = ({ label }) => {
       {isMonsterOrAswang ? (
         <g className="animate-pulse">
           {/* Bat/Folklore Wings */}
-          <path d="M60,44 C38,16 14,20 8,42 C18,40 26,46 32,54 C42,48 50,50 60,44 Z" fill="#E2F6C2" fillOpacity="0.2" />
-          <path d="M60,44 C82,16 106,20 112,42 C102,40 94,46 88,54 C78,48 70,50 60,44 Z" fill="#E2F6C2" fillOpacity="0.2" />
+          <path d="M60,44 C38,16 14,20 8,42 C18,40 26,46 32,54 C42,48 50,50 60,44 Z" fill="#F3F89D" fillOpacity="0.2" />
+          <path d="M60,44 C82,16 106,20 112,42 C102,40 94,46 88,54 C78,48 70,50 60,44 Z" fill="#F3F89D" fillOpacity="0.2" />
           {/* Head & Horns/Ears */}
           <polygon points="42,34 36,12 50,24 70,24 84,12 78,34 82,64 38,64" fill="#0A261E" />
           {/* Glowing Eyes */}
-          <polygon points="45,38 55,42 46,45" fill="#E2F6C2" />
-          <polygon points="75,38 65,42 74,45" fill="#E2F6C2" />
+          <polygon points="45,38 55,42 46,45" fill="#F3F89D" />
+          <polygon points="75,38 65,42 74,45" fill="#F3F89D" />
           {/* Fangs */}
           <line x1="46" y1="54" x2="74" y2="54" />
-          <polygon points="49,54 52,63 55,54" fill="#E2F6C2" />
-          <polygon points="65,54 68,63 71,54" fill="#E2F6C2" />
+          <polygon points="49,54 52,63 55,54" fill="#F3F89D" />
+          <polygon points="65,54 68,63 71,54" fill="#F3F89D" />
         </g>
       ) : isAquatic ? (
         <g className="animate-bounce">
           <path d="M16,48 C34,28 74,28 102,45 C74,62 34,62 16,48 Z" />
-          <polygon points="52,33 62,14 68,34" fill="#E2F6C2" />
-          <polygon points="100,45 114,32 110,45 114,58" fill="#E2F6C2" />
-          <circle cx="34" cy="44" r="3" fill="#E2F6C2" />
+          <polygon points="52,33 62,14 68,34" fill="#F3F89D" />
+          <polygon points="100,45 114,32 110,45 114,58" fill="#F3F89D" />
+          <circle cx="34" cy="44" r="3" fill="#F3F89D" />
           <polyline points="24,52 29,49 34,53 39,49 44,53" />
         </g>
       ) : isCrawly ? (
         <g className="animate-pulse">
           <ellipse cx="60" cy="48" rx="14" ry="18" />
           <circle cx="60" cy="26" r="8" />
-          <circle cx="57" cy="24" r="2" fill="#E2F6C2" />
-          <circle cx="63" cy="24" r="2" fill="#E2F6C2" />
+          <circle cx="57" cy="24" r="2" fill="#F3F89D" />
+          <circle cx="63" cy="24" r="2" fill="#F3F89D" />
           <polyline points="46,38 24,26 14,36" />
           <polyline points="46,46 20,44 10,54" />
           <polyline points="46,54 24,62 16,74" />
@@ -400,9 +401,9 @@ const RetroSpecimenGraphic: React.FC<{ label: string }> = ({ label }) => {
       ) : isCat ? (
         <g className="animate-bounce">
           <polygon points="30,38 24,14 44,26 76,26 96,14 90,38 94,66 26,66" />
-          <circle cx="44" cy="45" r="4" fill="#E2F6C2" />
-          <circle cx="76" cy="45" r="4" fill="#E2F6C2" />
-          <polygon points="56,53 64,53 60,58" fill="#E2F6C2" />
+          <circle cx="44" cy="45" r="4" fill="#F3F89D" />
+          <circle cx="76" cy="45" r="4" fill="#F3F89D" />
+          <polygon points="56,53 64,53 60,58" fill="#F3F89D" />
           <line x1="12" y1="48" x2="32" y2="51" />
           <line x1="12" y1="56" x2="32" y2="56" />
           <line x1="108" y1="48" x2="88" y2="51" />
@@ -411,13 +412,13 @@ const RetroSpecimenGraphic: React.FC<{ label: string }> = ({ label }) => {
       ) : isDog ? (
         <g className="animate-bounce">
           <rect x="32" y="24" width="56" height="46" rx="8" />
-          <path d="M32,28 C16,28 14,54 26,56 L32,44" fill="#E2F6C2" />
-          <path d="M88,28 C104,28 106,54 94,56 L88,44" fill="#E2F6C2" />
+          <path d="M32,28 C16,28 14,54 26,56 L32,44" fill="#F3F89D" />
+          <path d="M88,28 C104,28 106,54 94,56 L88,44" fill="#F3F89D" />
           <ellipse cx="47" cy="42" rx="6" ry="8" />
           <ellipse cx="73" cy="42" rx="6" ry="8" />
-          <circle cx="47" cy="43" r="2.5" fill="#E2F6C2" />
-          <circle cx="73" cy="43" r="2.5" fill="#E2F6C2" />
-          <ellipse cx="60" cy="54" rx="7" ry="4.5" fill="#E2F6C2" />
+          <circle cx="47" cy="43" r="2.5" fill="#F3F89D" />
+          <circle cx="73" cy="43" r="2.5" fill="#F3F89D" />
+          <ellipse cx="60" cy="54" rx="7" ry="4.5" fill="#F3F89D" />
         </g>
       ) : (
         <g className="animate-pulse">
@@ -425,7 +426,7 @@ const RetroSpecimenGraphic: React.FC<{ label: string }> = ({ label }) => {
           <circle cx="60" cy="45" r="22" />
           <line x1="60" y1="16" x2="60" y2="74" />
           <line x1="30" y1="45" x2="90" y2="45" />
-          <circle cx="60" cy="45" r="5" fill="#E2F6C2" />
+          <circle cx="60" cy="45" r="5" fill="#F3F89D" />
         </g>
       )}
     </svg>
@@ -461,7 +462,7 @@ const SpecimenPhotoBox: React.FC<{
         );
       }}
       title="Tap specimen to cycle 1999 CRT optical mode"
-      className={`relative border-2 border-[#E2F6C2] bg-[#0A261E]/70 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer group ${className}`}
+      className={`relative border-2 border-[#F3F89D] bg-[#0A261E]/70 overflow-hidden shrink-0 flex items-center justify-center cursor-pointer group ${className}`}
     >
       {imageUrl && !imgFailed ? (
         <img
@@ -477,20 +478,92 @@ const SpecimenPhotoBox: React.FC<{
         </div>
       )}
       {/* Animated CRT Scanner Laser Sweep Overlay */}
-      <div className="absolute inset-x-0 top-0 h-1 bg-[#E2F6C2]/60 animate-[ping_2.4s_ease-in-out_infinite] pointer-events-none" />
+      <div className="absolute inset-x-0 top-0 h-1 bg-[#F3F89D]/60 animate-[ping_2.4s_ease-in-out_infinite] pointer-events-none" />
       <div className="absolute inset-0 crt-scanlines pointer-events-none" />
       {/* Optical Mode Readout Tag */}
       <div className="absolute bottom-0.5 right-1 bg-[#0A261E]/85 px-1 text-[9px] sm:text-[10px] font-cmd uppercase phosphor-text pointer-events-none">
         {opticMode}
       </div>
       {/* Corner Targeting Brackets */}
-      <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#E2F6C2] pointer-events-none" />
-      <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-[#E2F6C2] pointer-events-none" />
-      <div className="absolute bottom-1 left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-[#E2F6C2] pointer-events-none" />
-      <div className="absolute bottom-1 right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-[#E2F6C2] pointer-events-none" />
+      <div className="absolute top-1 left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#F3F89D] pointer-events-none" />
+      <div className="absolute top-1 right-1 w-2.5 h-2.5 border-t-2 border-r-2 border-[#F3F89D] pointer-events-none" />
+      <div className="absolute bottom-1 left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-[#F3F89D] pointer-events-none" />
+      <div className="absolute bottom-1 right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-[#F3F89D] pointer-events-none" />
     </div>
   );
 };
+
+/**
+ * Breaks a long sentence into short, punchy 30-55 character visual pages at natural clause boundaries
+ * so that while the Computer speaks a long sentence, the CRT screen displays each clause in HUGE
+ * show-accurate letters that flip right as his voice reaches the next clause!
+ */
+function getLiveHugeDisplayChunk(
+  typedText: string,
+  fullText: string,
+  maxCharsPerScreen = 54
+): { chunkTyped: string; chunkFullLen: number } {
+  const cleanFull = fullText || typedText || '';
+  if (cleanFull.length <= maxCharsPerScreen) {
+    return { chunkTyped: typedText, chunkFullLen: cleanFull.length };
+  }
+
+  // Split fullText into visual pages of ~25..maxCharsPerScreen chars at clause/word boundaries
+  const pages: Array<{ start: number; end: number }> = [];
+  let cursor = 0;
+
+  while (cursor < cleanFull.length) {
+    const remaining = cleanFull.length - cursor;
+    if (remaining <= maxCharsPerScreen) {
+      pages.push({ start: cursor, end: cleanFull.length });
+      break;
+    }
+
+    const windowSlice = cleanFull.slice(cursor, cursor + maxCharsPerScreen);
+    let splitOffset = -1;
+
+    // 1. Prefer splitting right after sentence/clause punctuation (. ? ! ; : — ,)
+    const punctMatches = [...windowSlice.matchAll(/([.?!;:—]+|\.{2,}|,)\s+/g)];
+    for (const m of punctMatches) {
+      const candidateEnd = (m.index ?? 0) + m[0].length;
+      if (candidateEnd >= 18) {
+        splitOffset = candidateEnd;
+      }
+    }
+
+    // 2. Otherwise split at the last space before maxCharsPerScreen
+    if (splitOffset === -1) {
+      const lastSpace = windowSlice.lastIndexOf(' ');
+      splitOffset = lastSpace >= 16 ? lastSpace + 1 : maxCharsPerScreen;
+    }
+
+    pages.push({ start: cursor, end: cursor + splitOffset });
+    cursor += splitOffset;
+  }
+
+  const typedLen = typedText.length;
+  let activePage = pages[0];
+  for (const p of pages) {
+    if (typedLen > p.start) {
+      activePage = p;
+    }
+  }
+
+  const chunkTyped = typedText.slice(activePage.start).replace(/^\s+/, '');
+  const chunkFullLen = Math.max(1, activePage.end - activePage.start);
+  return { chunkTyped, chunkFullLen };
+}
+
+/**
+ * Formats GIANT punchlines (like "I DON'T KNOW\n\nYOU'RE ON YOUR\nOWN, KID:)")
+ * to match the exact line wrapping and huge screen-filling ratio from the show screenshot!
+ */
+function formatShowGiantText(text: string): string {
+  return text.replace(
+    /YOU'RE ON YOUR\s+OWN,\s*KID:\)/gi,
+    "YOU'RE ON YOUR\nOWN, KID:)"
+  );
+}
 
 export default function App() {
   const [screenState, setScreenState] = useState<ScreenState>('BOOTING');
@@ -561,6 +634,7 @@ export default function App() {
   const lastTouchOrClickTimeRef = useRef<number>(0);
   const lastKeystrokeTimeRef = useRef<number>(0);
   const actionEpochRef = useRef<number>(0);
+  const pendingUnmuteEventRef = useRef<string | null>(null);
 
   useEffect(() => {
     historyRef.current = history;
@@ -830,23 +904,25 @@ export default function App() {
           }
         }
 
-        // 2. Check if this slide is already in our local 278-clip Simon Prebble voice bank (instant 0ms lookup!)
+        // 2. Check if this slide's ttsId OR exact text matches our local 280-clip Simon Prebble voice bank (instant 0ms lookup!)
+        const matchedTextKey = findVoiceBankKeyByText(slide.text);
         const isKnownBankKey = Boolean(
-          slide.ttsId && Object.prototype.hasOwnProperty.call(STANDALONE_VOICE_LINES, slide.ttsId)
+          (slide.ttsId &&
+            Object.prototype.hasOwnProperty.call(STANDALONE_VOICE_LINES, slide.ttsId)) ||
+            matchedTextKey
         );
         let audioBase64: string | null = null;
         let audioMimeType = 'audio/mpeg';
+        const resolvedText = slide.text;
+        const resolvedTtsId = matchedTextKey || slide.ttsId;
 
         if (isKnownBankKey) {
-          audioBase64 = await getVoiceBankAudioBase64(slide.ttsId, slide.text);
+          audioBase64 = await getVoiceBankAudioBase64(resolvedTtsId, resolvedText);
         }
 
-        let resolvedText = slide.text;
-        let resolvedTtsId = slide.ttsId;
-
-        // 3. Otherwise (or if not yet in bank), fetch from the live TTS backend (with 1 automatic retry)
+        // 3. Otherwise (dynamic answer slide), fetch exact spoken audio from live TTS backend (with up to 3 attempts)
         if (!audioBase64) {
-          for (let attempt = 0; attempt < 2 && !audioBase64; attempt++) {
+          for (let attempt = 0; attempt < 3 && !audioBase64; attempt++) {
             const ttsRes = await postComputerApi<{
               audioBase64?: string | null;
               audioMimeType?: string | null;
@@ -858,21 +934,14 @@ export default function App() {
             if (ttsRes?.audioMimeType) {
               audioMimeType = ttsRes.audioMimeType;
             }
-            if (!audioBase64 && attempt === 0) {
-              await new Promise((r) => setTimeout(r, 250));
+            if (!audioBase64 && attempt < 2) {
+              await new Promise((r) => setTimeout(r, 280));
             }
           }
+          // 4. If backend /api/tts is unreachable (e.g. on static GitHub Pages), synthesize exact text via client Fish Audio!
+          // NEVER overwrite resolvedText with a saved voice-bank line so he ALWAYS says and displays the real answer!
           if (!audioBase64) {
-            audioBase64 = await getVoiceBankAudioBase64(resolvedTtsId, resolvedText);
-          }
-          // 4. Guaranteed voice continuity: if live TTS is unreachable, resolve to a matching voice-bank clip so he NEVER goes silent!
-          if (!audioBase64) {
-            const fb = await resolveFallbackVoiceBankSlide(slide);
-            if (fb.audioBase64) {
-              audioBase64 = fb.audioBase64;
-              resolvedText = fb.text;
-              resolvedTtsId = fb.ttsId;
-            }
+            audioBase64 = await synthesizeClientFishAudio(resolvedText);
           }
         }
 
@@ -1764,12 +1833,18 @@ export default function App() {
         if (actionEpochRef.current !== myEpoch) return;
         setLastReplySlides(resolved);
         updateScreenState('IDLE');
+        if (pendingUnmuteEventRef.current && !isMutedRef.current) {
+          const evt = pendingUnmuteEventRef.current;
+          pendingUnmuteEventRef.current = null;
+          triggerLiveAwarenessEvent(evt);
+          return;
+        }
         if (micEnabledRef.current && userDraftRef.current.length === 0) {
           startVoiceSessionRef.current();
         }
       },
     });
-  }, [createDecodedSlidePromises, gatherLivePhoneTelemetry, updateScreenState]);
+  }, [createDecodedSlidePromises, gatherLivePhoneTelemetry, triggerLiveAwarenessEvent, updateScreenState]);
 
   // Automatically boot on app open (and open Install Modal if launched via ?install=1 link)
   useEffect(() => {
@@ -1854,10 +1929,10 @@ export default function App() {
       setActiveSlide(null);
       hiddenCmdInputRef.current?.blur();
 
-      // STAGE 1: Play the looping "Waiting Courage Computer" sound while typing "SEARCHING..."
+      // STAGE 1: Play the looping "Waiting Courage Computer" sound while typing "SEARCHING" inside the show-accurate red/cream box
       updateScreenState('SEARCHING');
       const stopWaitingSound = soundEngine.startWaitingCourageSound();
-      soundEngine.runQuickTypewriter('SEARCHING...', 40, (txt) => setPlainScreenText(txt));
+      soundEngine.runQuickTypewriter('SEARCHING', 45, (txt) => setPlainScreenText(txt));
 
       try {
         const deviceInfo = await gatherLivePhoneTelemetry(trimmed);
@@ -1932,6 +2007,12 @@ export default function App() {
             if (actionEpochRef.current !== myEpoch) return;
             setLastReplySlides(resolved);
             updateScreenState('IDLE');
+            if (pendingUnmuteEventRef.current && !isMutedRef.current) {
+              const evt = pendingUnmuteEventRef.current;
+              pendingUnmuteEventRef.current = null;
+              triggerLiveAwarenessEvent(evt);
+              return;
+            }
             if (micEnabledRef.current && userDraftRef.current.length === 0) {
               startVoiceSessionRef.current();
             }
@@ -1955,6 +2036,7 @@ export default function App() {
       createDecodedSlidePromises,
       recordModelOutputToProfile,
       stopMicHardware,
+      triggerLiveAwarenessEvent,
       updateScreenState,
     ]
   );
@@ -2102,25 +2184,16 @@ export default function App() {
   const toggleMuteMode = (e: React.MouseEvent) => {
     e.stopPropagation();
     soundEngine.unlockAudio();
-    actionEpochRef.current += 1;
-    liveEventInFlightRef.current = false;
 
     if (!isMutedRef.current) {
-      // Muting the Computer
+      // Muting the Computer: silence audio ONLY while keeping the typewriter effect & current slides running!
       isMutedRef.current = true;
       setIsMuted(true);
       soundEngine.setMuted(true);
-      if (screenStateRef.current === 'SPEAKING') {
-        screenStateRef.current = 'IDLE';
-        setScreenState('IDLE');
-        if (micEnabledRef.current && userDraftRef.current.length === 0) {
-          startVoiceSessionRef.current();
-        }
-      }
       return;
     }
 
-    // Unmuting the Computer — he immediately speaks and calls out if you turned the mic off while he was muted (or if the mic is off)!
+    // Unmuting the Computer: restore voice audio immediately
     isMutedRef.current = false;
     setIsMuted(false);
     soundEngine.setMuted(false);
@@ -2128,21 +2201,17 @@ export default function App() {
 
     const turnedMicOff = micTurnedOffWhileMutedRef.current || !micEnabledRef.current;
     micTurnedOffWhileMutedRef.current = false;
+    const unmuteEvent = turnedMicOff ? 'UNMUTED_AFTER_MIC_OFF' : 'MUTE_TOGGLE_CAUGHT';
 
-    if (screenStateRef.current === 'SPEAKING') {
-      screenStateRef.current = 'IDLE';
-      setScreenState('IDLE');
-    }
-
+    // If he is currently in the middle of typing/speaking a slide, let him finish speaking it with audio back on,
+    // and queue the unmute callout to fire right when his current slides complete!
     if (screenStateRef.current !== 'IDLE' && screenStateRef.current !== 'LISTENING') {
+      pendingUnmuteEventRef.current = unmuteEvent;
       return;
     }
 
-    if (turnedMicOff) {
-      triggerLiveAwarenessEvent('UNMUTED_AFTER_MIC_OFF');
-    } else {
-      triggerLiveAwarenessEvent('MUTE_TOGGLE_CAUGHT');
-    }
+    pendingUnmuteEventRef.current = null;
+    triggerLiveAwarenessEvent(unmuteEvent);
   };
 
   // Render the Computer's Center Display
@@ -2158,7 +2227,7 @@ export default function App() {
             >
               {line}
               {idx === bootLines.length - 1 && (
-                <span className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-1.5 align-baseline cursor-block" />
+                <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
               )}
             </div>
           ))}
@@ -2170,17 +2239,16 @@ export default function App() {
       return <CourageClangingBell />;
     }
 
-    // Compact single-line SEARCHING... so the 'G' never wraps onto a second line on mobile phones!
+    // Show-Accurate SEARCHING Box (Screenshot 3: Centered Cream Rectangle with Dark Red/Maroon Border & Text)
     if (screenState === 'SEARCHING') {
+      const searchingText = (plainScreenText || 'SEARCHING').replace(/\.+$/, '');
       return (
-        <div className="w-full flex items-center justify-center crt-glitch px-2">
-          <h1 className="font-courage uppercase whitespace-nowrap phosphor-text text-[clamp(1.3rem,5.2vw,3.4rem)] leading-[1.3] text-center">
-            {plainScreenText}
-            <span
-              className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-1.5 align-baseline cursor-block"
-              aria-hidden="true"
-            />
-          </h1>
+        <div className="w-full flex items-center justify-center crt-glitch px-3">
+          <div className="courage-red-box px-6 py-3 sm:px-14 sm:py-5 min-w-[240px] sm:min-w-[420px] flex items-center justify-center">
+            <h1 className="font-courage uppercase whitespace-nowrap courage-red-box-text text-[clamp(1.5rem,6.2vw,4.1rem)] leading-[1.2] tracking-[0.07em] text-center">
+              {searchingText}
+            </h1>
+          </div>
         </div>
       );
     }
@@ -2189,7 +2257,52 @@ export default function App() {
       (screenState === 'SPEAKING' || screenState === 'IDLE') && activeSlide !== null;
 
     if (showDynamicSlide && activeSlide) {
-      const targetLen = (activeSlide.fullText || activeSlide.typedText).length;
+      const fullSlideText = activeSlide.fullText || activeSlide.typedText || '';
+      const typedSlideText = activeSlide.typedText || '';
+
+      // 0. SHOW-ACCURATE "SEARCH FOUND - [ 1 ITEM ]" SCREEN (Screenshot 4!)
+      const searchFoundMatch = fullSlideText.match(
+        /^Search\s+found\s*[:-]?\s*1\s+item[.!]?\s*(.*)$/i
+      );
+      if (searchFoundMatch) {
+        const prefixLen = fullSlideText.length - (searchFoundMatch[1] || '').length;
+        const showOneItemBox = typedSlideText.length >= 12;
+        const trailingTyped =
+          typedSlideText.length > prefixLen
+            ? typedSlideText.slice(prefixLen).trim()
+            : '';
+        const headerTyped =
+          typedSlideText.length < 6
+            ? typedSlideText.toUpperCase()
+            : typedSlideText.length < 12
+            ? `SEARCH\n${typedSlideText.slice(6).trim().toUpperCase()}-`
+            : 'SEARCH\nFOUND-';
+
+        return (
+          <div className="w-full max-w-[94vw] mx-auto flex flex-col items-center justify-center space-y-5 sm:space-y-8 px-2 crt-glitch text-center">
+            <h1 className="font-courage uppercase whitespace-pre-line phosphor-text text-[clamp(2.1rem,8.2vw,5.4rem)] leading-[1.2] tracking-[0.06em] text-center">
+              {headerTyped}
+            </h1>
+
+            {showOneItemBox && (
+              <div className="courage-red-box px-8 py-2.5 sm:px-16 sm:py-4 flex items-center justify-center">
+                <span className="font-courage uppercase courage-red-box-text text-[clamp(1.55rem,6vw,3.9rem)] leading-[1.2] tracking-[0.06em]">
+                  1 ITEM
+                </span>
+              </div>
+            )}
+
+            {trailingTyped && (
+              <h2 className="font-courage uppercase whitespace-pre-line break-words phosphor-text w-full max-w-4xl text-[clamp(1.65rem,6vw,3.9rem)] leading-[1.3] text-center pt-1">
+                {trailingTyped}
+                {screenState === 'SPEAKING' && (
+                  <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
+                )}
+              </h2>
+            )}
+          </div>
+        );
+      }
 
       // 1. SHOW-ACCURATE SINGLE-SUBJECT VISUALIZER + REAL CONNECTED PICTURE (Animals, Aswang, Monsters, Science, etc.)
       if (
@@ -2202,12 +2315,13 @@ export default function App() {
           activeSlide.boxTitle?.replace(/^SPECIMEN:\s*/i, '') ||
           'SPECIMEN';
         const headerTitle = activeSlide.boxTitle || `SPECIMEN: ${subjectLabel}`;
+        const { chunkTyped } = getLiveHugeDisplayChunk(typedSlideText, fullSlideText, 58);
 
         return (
-          <div className="w-full max-w-5xl mx-auto flex flex-col items-center justify-center space-y-4 sm:space-y-6 px-1 crt-glitch">
-            <div className="w-full max-w-2xl border-2 border-[#E2F6C2] bg-[#0A261E]/35 p-3 sm:p-4 flex flex-col items-center space-y-3">
-              <div className="w-full border-[2px] border-[#1E1A1B] bg-[#E3DCE1] px-3 py-1.5">
-                <h2 className="font-courage uppercase text-center text-[#5A181E] text-xs sm:text-lg font-bold tracking-wider">
+          <div className="w-full max-w-[94vw] mx-auto flex flex-col items-center justify-center space-y-4 sm:space-y-6 px-1 crt-glitch">
+            <div className="w-full max-w-2xl border-2 border-[#F3F89D] bg-[#0A261E]/35 p-3 sm:p-4 flex flex-col items-center space-y-3">
+              <div className="w-full courage-red-box px-3 py-1.5 sm:py-2">
+                <h2 className="font-courage uppercase text-center courage-red-box-text text-sm sm:text-xl font-bold tracking-wider">
                   {headerTitle}
                 </h2>
               </div>
@@ -2221,7 +2335,7 @@ export default function App() {
                 />
 
                 {/* Companion Animated Bio-Scanner & Creature Schematic Visualizer */}
-                <div className="flex flex-col items-center justify-between border border-[#E2F6C2]/70 bg-[#0A261E]/50 p-2 w-28 h-28 sm:w-40 sm:h-40 shrink-0">
+                <div className="flex flex-col items-center justify-between border border-[#F3F89D]/70 bg-[#0A261E]/50 p-2 w-28 h-28 sm:w-40 sm:h-40 shrink-0">
                   <div className="w-full flex items-center justify-between text-[10px] sm:text-xs font-cmd phosphor-text opacity-80">
                     <span>SCAN: LIVE</span>
                     <span>99.9%</span>
@@ -2231,21 +2345,21 @@ export default function App() {
                   </div>
                   {/* Animated Equalizer / Bio-Wave Bars */}
                   <div className="w-full flex items-end justify-between gap-1 h-4 px-1">
-                    <span className="flex-1 bg-[#E2F6C2] h-full animate-pulse" />
-                    <span className="flex-1 bg-[#E2F6C2] h-2/3 animate-bounce" />
-                    <span className="flex-1 bg-[#E2F6C2] h-4/5 animate-pulse" />
-                    <span className="flex-1 bg-[#E2F6C2] h-1/2 animate-bounce" />
-                    <span className="flex-1 bg-[#E2F6C2] h-full animate-pulse" />
+                    <span className="flex-1 bg-[#F3F89D] h-full animate-pulse" />
+                    <span className="flex-1 bg-[#F3F89D] h-2/3 animate-bounce" />
+                    <span className="flex-1 bg-[#F3F89D] h-4/5 animate-pulse" />
+                    <span className="flex-1 bg-[#F3F89D] h-1/2 animate-bounce" />
+                    <span className="flex-1 bg-[#F3F89D] h-full animate-pulse" />
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="w-full max-w-4xl flex items-center justify-start">
-              <h1 className="font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-[clamp(1.12rem,3.8vw,2.2rem)] leading-[1.46] text-left">
-                {activeSlide.typedText}
+            <div className="w-full max-w-5xl flex items-center justify-center">
+              <h1 className="font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-[clamp(1.45rem,5.2vw,3.3rem)] leading-[1.34] text-center">
+                {chunkTyped}
                 {screenState === 'SPEAKING' && (
-                  <span className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-1.5 align-baseline cursor-block" />
+                  <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
                 )}
               </h1>
             </div>
@@ -2255,12 +2369,13 @@ export default function App() {
 
       // 2. SIDE-BY-SIDE VISUAL COMPARISON MODE
       if (activeSlide.style === 'COMPARE' && (activeSlide.compareLeft || activeSlide.compareRight)) {
+        const { chunkTyped } = getLiveHugeDisplayChunk(typedSlideText, fullSlideText, 58);
         return (
-          <div className="w-full max-w-5xl mx-auto flex flex-col items-center justify-center space-y-5 sm:space-y-7 px-1 crt-glitch">
+          <div className="w-full max-w-[94vw] mx-auto flex flex-col items-center justify-center space-y-5 sm:space-y-7 px-1 crt-glitch">
             <div className="w-full grid grid-cols-2 gap-3 sm:gap-6 max-w-2xl mx-auto">
-              <div className="border-2 border-[#E2F6C2] bg-[#0A261E]/25 p-3 flex flex-col items-center text-center space-y-2">
-                <div className="w-full border border-[#1E1A1B] bg-[#E3DCE1] px-2 py-1">
-                  <span className="font-courage uppercase text-[#5A181E] text-xs sm:text-base font-bold tracking-wider">
+              <div className="border-2 border-[#F3F89D] bg-[#0A261E]/25 p-3 flex flex-col items-center text-center space-y-2">
+                <div className="w-full courage-red-box px-2 py-1">
+                  <span className="font-courage uppercase courage-red-box-text text-xs sm:text-base font-bold tracking-wider">
                     {activeSlide.compareLeft || 'ITEM 1'}
                   </span>
                 </div>
@@ -2270,9 +2385,9 @@ export default function App() {
                 />
               </div>
 
-              <div className="border-2 border-[#E2F6C2] bg-[#0A261E]/25 p-3 flex flex-col items-center text-center space-y-2">
-                <div className="w-full border border-[#1E1A1B] bg-[#E3DCE1] px-2 py-1">
-                  <span className="font-courage uppercase text-[#5A181E] text-xs sm:text-base font-bold tracking-wider">
+              <div className="border-2 border-[#F3F89D] bg-[#0A261E]/25 p-3 flex flex-col items-center text-center space-y-2">
+                <div className="w-full courage-red-box px-2 py-1">
+                  <span className="font-courage uppercase courage-red-box-text text-xs sm:text-base font-bold tracking-wider">
                     {activeSlide.compareRight || 'ITEM 2'}
                   </span>
                 </div>
@@ -2283,11 +2398,11 @@ export default function App() {
               </div>
             </div>
 
-            <div className="w-full flex items-center justify-center">
-              <h1 className="font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-[clamp(1.1rem,3.6vw,2.15rem)] leading-[1.48] text-left">
-                {activeSlide.typedText}
+            <div className="w-full max-w-5xl flex items-center justify-center">
+              <h1 className="font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-[clamp(1.45rem,5.2vw,3.3rem)] leading-[1.35] text-center">
+                {chunkTyped}
                 {screenState === 'SPEAKING' && (
-                  <span className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-1.5 align-baseline cursor-block" />
+                  <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
                 )}
               </h1>
             </div>
@@ -2295,36 +2410,35 @@ export default function App() {
         );
       }
 
-      // 3. SHOW LIST LAYOUT (1. and its content on top, 2. and its content directly underneath 1. — NEVER in a single sentence!)
+      // 3. SHOW LIST LAYOUT (Screenshot 2: Cream Box with Red Text on top + Huge 1. and 2. lines underneath!)
       if (
         activeSlide.style === 'LIST' ||
-        /\b1[.)]\s+.+\b2[.)]\s+/s.test(activeSlide.fullText || activeSlide.typedText)
+        /\b1[.)]\s+.+\b2[.)]\s+/s.test(fullSlideText)
       ) {
-        const formattedTyped = formatNumberedListText(activeSlide.typedText);
+        const formattedTyped = formatNumberedListText(typedSlideText);
         const listLines = formattedTyped
           .split(/\n+/)
           .map((l) => l.trim())
           .filter(Boolean);
+        const listHeaderTitle = activeSlide.boxTitle || 'HOW TO SURVIVE THIS';
 
         return (
-          <div className="w-full max-w-5xl mx-auto flex flex-col items-center justify-center space-y-5 sm:space-y-7 px-1 crt-glitch">
-            {activeSlide.boxTitle && (
-              <div className="w-full max-w-3xl border-[2.5px] border-[#1E1A1B] bg-[#E3DCE1] px-5 py-3 sm:px-8 sm:py-4 shadow-xs">
-                <h2 className="font-courage uppercase text-center text-[#5A181E] text-[clamp(1.1rem,3.6vw,2.2rem)] leading-[1.3]">
-                  {activeSlide.boxTitle}
-                </h2>
-              </div>
-            )}
+          <div className="w-full max-w-[94vw] mx-auto flex flex-col items-center justify-center space-y-6 sm:space-y-8 px-2 crt-glitch">
+            <div className="w-full max-w-4xl courage-red-box px-5 py-3.5 sm:px-10 sm:py-5">
+              <h2 className="font-courage uppercase text-center courage-red-box-text text-[clamp(1.25rem,4.5vw,3.0rem)] leading-[1.26] tracking-[0.06em]">
+                {listHeaderTitle}
+              </h2>
+            </div>
 
-            <div className="w-full max-w-4xl flex flex-col items-start justify-start space-y-3 sm:space-y-4 text-left">
+            <div className="w-full max-w-4xl flex flex-col items-start justify-start space-y-4 sm:space-y-5 text-left pl-1 sm:pl-4">
               {listLines.map((lineText, idx) => (
                 <div
                   key={idx}
-                  className="font-courage uppercase break-words phosphor-text w-full text-left text-[clamp(1.18rem,4vw,2.35rem)] leading-[1.48]"
+                  className="font-courage break-words phosphor-text w-full text-left text-[clamp(1.45rem,5.1vw,3.35rem)] leading-[1.35]"
                 >
                   {lineText}
                   {screenState === 'SPEAKING' && idx === listLines.length - 1 && (
-                    <span className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-1.5 align-baseline cursor-block" />
+                    <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
                   )}
                 </div>
               ))}
@@ -2333,45 +2447,54 @@ export default function App() {
         );
       }
 
-      // 4. GIANT PUNCHLINE / INSULT LAYOUT
+      // 4. GIANT PUNCHLINE / INSULT LAYOUT (Screenshot 5 ratio: "I DON'T KNOW / YOU'RE ON YOUR OWN, KID:)")
       if (activeSlide.style === 'GIANT') {
+        const displayGiantTyped = formatShowGiantText(typedSlideText);
+        const displayGiantFull = formatShowGiantText(fullSlideText);
+        const targetLen = displayGiantFull.length;
+
         const giantSize =
-          targetLen <= 14
-            ? 'text-[clamp(2.25rem,8.8vw,5.4rem)] leading-[1.3]'
-            : targetLen <= 38
-            ? 'text-[clamp(1.55rem,5.5vw,3.65rem)] leading-[1.38]'
-            : 'text-[clamp(1.3rem,4.4vw,2.75rem)] leading-[1.45]';
+          targetLen <= 16
+            ? 'text-[clamp(2.6rem,10.2vw,6.6rem)] leading-[1.22]'
+            : targetLen <= 44
+            ? 'text-[clamp(2.0rem,7.3vw,5.0rem)] leading-[1.28]'
+            : 'text-[clamp(1.7rem,6.0vw,4.1rem)] leading-[1.32]';
 
         return (
-          <div className="w-full max-w-5xl mx-auto flex items-center justify-center text-center crt-glitch">
+          <div className="w-full max-w-[94vw] mx-auto flex items-center justify-center text-center px-2 crt-glitch">
             <h1
-              className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full ${giantSize}`}
+              className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full tracking-[0.06em] ${giantSize}`}
             >
-              {activeSlide.typedText}
+              {displayGiantTyped}
               {screenState === 'SPEAKING' && (
-                <span className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-1.5 align-baseline cursor-block" />
+                <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
               )}
             </h1>
           </div>
         );
       }
 
-      // 5. NORMAL FULL-SCREEN DEADPAN SLIDE (Short, bold, show-accurate 1-2 sentences)
+      // 5. NORMAL FULL-SCREEN DEADPAN SLIDE (Uses live clause-paging so every screen is short & HUGE like the show!)
+      const { chunkTyped, chunkFullLen } = getLiveHugeDisplayChunk(
+        typedSlideText,
+        fullSlideText,
+        54
+      );
       const normalSize =
-        targetLen <= 55
-          ? 'text-[clamp(1.55rem,5.4vw,3.45rem)] leading-[1.42]'
-          : targetLen <= 105
-          ? 'text-[clamp(1.32rem,4.5vw,2.85rem)] leading-[1.46]'
-          : 'text-[clamp(1.12rem,3.8vw,2.3rem)] leading-[1.48]';
+        chunkFullLen <= 28
+          ? 'text-[clamp(2.2rem,8.0vw,5.3rem)] leading-[1.26]'
+          : chunkFullLen <= 46
+          ? 'text-[clamp(1.9rem,6.8vw,4.5rem)] leading-[1.3]'
+          : 'text-[clamp(1.68rem,5.9vw,3.9rem)] leading-[1.34]';
 
       return (
-        <div className="w-full max-w-5xl mx-auto flex items-center justify-center crt-glitch">
+        <div className="w-full max-w-[94vw] mx-auto flex items-center justify-center px-2 crt-glitch">
           <h1
-            className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-left ${normalSize}`}
+            className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-center tracking-[0.055em] ${normalSize}`}
           >
-            {activeSlide.typedText}
+            {chunkTyped}
             {screenState === 'SPEAKING' && (
-              <span className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-1.5 align-baseline cursor-block" />
+              <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
             )}
           </h1>
         </div>
@@ -2386,21 +2509,21 @@ export default function App() {
     const isShort =
       trimmed === 'YOU\nTWIT' ||
       trimmed === 'SPEAK\nYOU TWIT' ||
-      trimmed.length <= 14;
+      trimmed.length <= 16;
 
     return (
-      <div className="w-full max-w-5xl mx-auto flex items-center justify-center crt-glitch">
+      <div className="w-full max-w-[94vw] mx-auto flex items-center justify-center px-2 crt-glitch">
         <h1
           className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full ${
             isShort
-              ? 'text-[clamp(2.35rem,9vw,5.4rem)] leading-[1.32] text-center'
-              : 'text-[clamp(1.3rem,4.4vw,2.65rem)] leading-[1.48] text-center'
+              ? 'text-[clamp(2.65rem,10.2vw,6.6rem)] leading-[1.24] text-center'
+              : 'text-[clamp(1.9rem,6.8vw,4.4rem)] leading-[1.32] text-center'
           }`}
         >
           {plainScreenText}
           {screenState === 'LISTENING' && (
             <span
-              className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-1.5 align-baseline cursor-block"
+              className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block"
               aria-hidden="true"
             />
           )}
@@ -2411,15 +2534,15 @@ export default function App() {
 
   const isTyping = userDraft.length > 0;
 
-  // Dynamic font sizing for user typing so even very long paragraphs never look cut off!
+  // Dynamic font sizing for user typing so it's also big and bold like the show!
   const userDraftFontSize =
     userDraft.length <= 45
-      ? 'text-[clamp(1.18rem,4vw,2.4rem)] leading-[1.52]'
+      ? 'text-[clamp(1.4rem,4.8vw,2.9rem)] leading-[1.42]'
       : userDraft.length <= 110
-      ? 'text-[clamp(1.0rem,3.3vw,1.9rem)] leading-[1.48]'
+      ? 'text-[clamp(1.15rem,3.8vw,2.2rem)] leading-[1.4]'
       : userDraft.length <= 200
-      ? 'text-[clamp(0.88rem,2.7vw,1.5rem)] leading-[1.45]'
-      : 'text-[clamp(0.78rem,2.2vw,1.25rem)] leading-[1.42]';
+      ? 'text-[clamp(0.98rem,3.0vw,1.7rem)] leading-[1.38]'
+      : 'text-[clamp(0.85rem,2.4vw,1.35rem)] leading-[1.36]';
 
   return (
     <main
@@ -2692,7 +2815,7 @@ export default function App() {
               screenState === 'BOOTING'
             }
             className={`min-h-[44px] px-2.5 flex items-center gap-1.5 font-cmd text-lg sm:text-xl uppercase phosphor-text cursor-pointer touch-manipulation ${
-              isMuted ? 'opacity-100 border border-[#E2F6C2]/60 bg-[#0A261E]/50' : 'opacity-75 hover:opacity-100'
+              isMuted ? 'opacity-100 border border-[#F3F89D]/60 bg-[#0A261E]/50' : 'opacity-75 hover:opacity-100'
             }`}
             aria-label={isMuted ? 'Unmute computer voice' : 'Mute computer voice'}
             title={isMuted ? 'Unmute Computer Voice' : 'Mute Computer Voice'}
@@ -2751,7 +2874,7 @@ export default function App() {
                 setInstallModalOpen(true);
               }
             }}
-            className="min-h-[44px] px-2.5 flex items-center gap-1.5 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-75 hover:opacity-100 cursor-pointer touch-manipulation border border-[#E2F6C2]/40 bg-[#0A261E]/40"
+            className="min-h-[44px] px-2.5 flex items-center gap-1.5 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-75 hover:opacity-100 cursor-pointer touch-manipulation border border-[#F3F89D]/40 bg-[#0A261E]/40"
             aria-label="Download app to phone"
           >
             <Download className="w-4 h-4" />
@@ -2786,7 +2909,7 @@ export default function App() {
             >
               {userDraft}
               <span
-                className="inline-block w-[0.45em] h-[0.78em] bg-[#E2F6C2] ml-2 align-baseline cursor-block"
+                className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-2 align-baseline cursor-block"
                 aria-hidden="true"
               />
             </div>
