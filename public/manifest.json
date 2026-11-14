@@ -1,7 +1,7 @@
 {
-  "name": "1999 AI",
-  "short_name": "1999 AI",
-  "description": "A downloadable 1999 monochrome teal CRT voice and command-line terminal with a cynical, hyper-aware British computer.",
+  "name": "The Sentient Computer",
+  "short_name": "The Sentient Computer",
+  "description": "A downloadable monochrome teal CRT voice and command-line terminal with a cynical, hyper-aware Sentient Computer.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

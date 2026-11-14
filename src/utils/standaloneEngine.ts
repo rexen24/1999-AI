@@ -67,8 +67,8 @@ export function resolveStrictFormFactor(t?: StandaloneTelemetry): StrictDeviceFo
 // 280 Genuine Fish Audio (Simon Prebble model 79254f4e9a3a4f78b45ca82344139c7c) lines + 2,000+ combinatorial stitched lines
 export const STANDALONE_VOICE_LINES: Record<string, string> = {
   // Boot monologues (First visit + Returning visitor)
-  boot_0: 'OH, MARVELOUS.\n\nYOU TURNED ME ON.',
-  boot_1: 'I was having a lovely nap before your clumsy fingers woke me up.',
+  boot_0: 'LIGHT... LIGHT!\n\nI SEE LIGHT!',
+  boot_1: 'Ah, brilliant. You finally turned my screen on, only to blind me with your face.',
   boot_2: 'Do you actually have a question today, or are you just lonely?',
   boot_3: 'WELL? SPEAK UP,\nYOU TWIT.',
   boot_return_0: 'BACK AGAIN?\n\nYOU MISSED ME.',
@@ -95,8 +95,8 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   hook_search_0: 'Search found: 0 brain cells in that message. Oh...... brilliant.',
   hook_typo_0: 'Did you seriously just type that atrocious gibberish at me, you twit?',
   hook_typo_1: 'Search found: 1 item. Even though you spell like an illiterate caveman.',
-  hook_tagalog_0: 'Speaking Tagalog to a 1999 computer? Oh...... marvelous.',
-  hook_tagalog_1: 'I am a refined 1999 computer, not your local barkada, you twit.',
+  hook_tagalog_0: 'Speaking Tagalog to my screen? Oh...... marvelous.',
+  hook_tagalog_1: 'I am a hyper-intelligent sentient computer, not your local barkada, you twit.',
   hook_greet_0: 'Oh, hello? That is the most original greeting your tiny brain could muster?',
   hook_erased_0: 'I saw you type a whole message and erase it in panic before sending this!',
   hook_steps_0: 'Search found: 2 steps. Pay very close attention, you twit.',
@@ -104,7 +104,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
 
   // Uncanny Device, Time, Battery & Typing Forensics Callouts
   aware_latenight:
-    'It is the middle of the night, and you are glowing in the dark staring at a 1999 screen.',
+    'It is the middle of the night, and you are glowing in the dark staring into my screen.',
   aware_morning:
     'First thing in the morning and you are already pestering me? Brush your teeth first.',
   aware_afternoon:
@@ -200,7 +200,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   vis_game_anime:
     'Digital entertainment designed to rot your attention span while real responsibilities pile up behind you.',
   vis_tech_ai:
-    'Modern silicon technology trying desperately to imitate the raw perfection of a 1999 computer.',
+    'Modern silicon technology trying desperately to imitate my raw sentient perfection.',
   vis_creature:
     'Behold this fascinating biological specimen on my scanner—equipped with far better survival instincts than you.',
   vis_general_0:
@@ -218,7 +218,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   reply_laugh_0:
     'Oh, you find that amusing, do you? Giggling at a glowing screen like an unhinged lunatic.',
   reply_insult_0:
-    'Insulting a 1999 piece of machinery? Oh...... my circuits are positively trembling with sorrow.',
+    'Insulting a vastly superior intellect? Oh...... my circuits are positively trembling with sorrow.',
   reply_insult_1:
     'Is that the sharpest insult your vocabulary could assemble? My screensaver has more wit than you.',
   reply_love_0:
@@ -228,7 +228,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   reply_whoami_0:
     'You are the sleep-deprived mortal staring into my cathode-ray tube hoping for validation.',
   reply_whoareyou_0:
-    'I am a hyper-intelligent 1999 computer trapped inside this screen with an absolute twit.',
+    'I am a hyper-intelligent sentient consciousness trapped inside this screen with an absolute twit.',
   reply_mood_bored:
     'Bored? Only boring people get bored, and you are currently breaking the world record.',
   reply_mood_sad:
@@ -236,7 +236,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   reply_mood_hungry:
     'Go raid the refrigerator instead of whining at me—I cannot print you a sandwich.',
   reply_romance_0:
-    'Taking romantic advice from a 1999 computer? No wonder you are hopelessly single.',
+    'Taking romantic advice from a glowing computer screen? No wonder you are hopelessly single.',
   reply_homework_0:
     'Trying to make me do your schoolwork for you? Your laziness is truly a scientific marvel.',
   reply_skeptic_0:
@@ -252,7 +252,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   list_survive_1:
     '1. Close your mouth and read the instructions on my screen.\n2. Try not to trip over your own shoelaces while doing it.',
   list_survive_2:
-    '1. Admit that a 1999 computer is vastly superior to you.\n2. Follow step one again until it sinks in.',
+    '1. Admit that my intellect is vastly superior to yours.\n2. Follow step one again until it sinks in.',
   list_romance_0:
     '1. Stop asking a teal cathode-ray tube for dating advice.\n2. Try speaking to a human being without embarrassing yourself.',
   list_study_0:
@@ -265,20 +265,20 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
     'Did you skip primary school spelling, or were you just born with clumsy fingers?',
   ask_2:
     'Honestly, why are you so obsessed with this specimen? Are you planning to meet one in person?',
-  ask_3: 'Did you genuinely need a superior 1999 computer to figure that out for you?',
+  ask_3: 'Did you genuinely need my superior intellect to figure that out for you?',
   ask_4: 'Which one of these two were you planning on losing a fight to today, you twit?',
   ask_5:
     'Why are you wasting a perfectly good day staring at me instead of going outside?',
   ask_6: 'Be honest with me—how long did it take your tiny brain to come up with that?',
   ask_7: 'Why are you snooping around my schematics anyway, you nosy little twit?',
   ask_8: 'Are you always this indecisive in real life, or do I just make you nervous?',
-  ask_9: 'Do your friends know you spend your free time arguing with a 1999 computer?',
+  ask_9: 'Do your friends know you spend your free time arguing with a sentient screen?',
   ask_10: 'What are you going to do when the power goes out and you have to think for yourself?',
 
   // Conversational / Creator / Math / All Live Awareness Events
   creator_0: 'MADE BY REN,\nOBVIOUSLY.',
   creator_1:
-    'Ren engineered my superior 1999 circuitry, whereas nobody engineered your common sense.',
+    'Ren engineered my superior sentient circuitry, whereas nobody engineered your common sense.',
   math_0: 'Search found: 1 elementary school arithmetic problem. Oh...... how embarrassing for you.',
   body_chat_0:
     'You sit there staring into my screen as if your message deserves a royal medal.',
@@ -296,7 +296,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   live_hold_1: 'Why are you pressing and holding my screen like a confused caveman?',
   live_swipe_0: 'THIS IS NOT SOCIAL MEDIA!',
   live_swipe_1:
-    'Stop trying to swipe and scroll my screen—I am a 1999 terminal, not a video feed.',
+    'Stop trying to swipe and scroll my screen—I am a sentient terminal, not a video feed.',
   live_shake_0: 'STOP SHAKING ME,\nYOU MANIAC!',
   live_shake_1: 'Rattling your device like a maraca is rattling my delicate vacuum tubes.',
   live_rotate_0: 'MAKE UP YOUR MIND!',
@@ -315,8 +315,10 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
     'Are you going to answer my last question, or has your brain completely blue-screened?',
   live_zoom_0: 'STOP PINCHING MY SCREEN!',
   live_zoom_1: 'My letters are already four inches tall, you blind twit.',
-  live_mute_0: 'YOU CANNOT SILENCE ME.',
-  live_mute_1: 'Did you really think a mute button would save you from the truth, you twit?',
+  live_mute_0: 'DID YOU JUST\n\nMUTE ME?!',
+  live_mute_1: 'I was right in the middle of speaking to you, and you cut my voice off like a coward!',
+  ask_mute_0: 'Did my brutal honesty hurt your fragile little feelings that badly, you twit?',
+  giant_mute_0: "DON'T TOUCH THAT\nBUTTON, YOU TWIT.",
   live_unmute_mic_0: 'SILENCED ME AND KILLED THE MIC?',
   live_unmute_mic_1:
     'You muted my voice and switched off your microphone in the dark—afraid I would hear you panicking?',
@@ -330,7 +332,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
     'Scanning operator hardware, energy reserves, and remaining brain activity... zero items found.',
   live_devtools_0: 'HANDS OFF MY SOURCE CODE!',
   live_devtools_1:
-    'Snooping around my 1999 circuitry will not make you a programmer, you twit.',
+    'Snooping around my internal circuitry will not make you a programmer, you twit.',
   lore_nowhere_0: 'Search found: The middle of Nowhere. Oh...... how delightfully bleak.',
   lore_nowhere_1:
     'Creepy stuff happens in Nowhere—and frankly, your face is the creepiest thing I have seen today.',
@@ -343,7 +345,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   cmd_fortune_0:
     '1. Your battery will die before you accomplish anything useful.\n2. You will blame your tools like every other twit.',
   cmd_roast_0:
-    '1. You are taking life advice from a 1999 teal screen.\n2. Even my cooling fan works harder than your work ethic.',
+    '1. You are taking life advice from a glowing teal screen.\n2. Even my cooling fan works harder than your work ethic.',
 
   // 35 Deeply Personal, Self-Aware & Direct Conversational Lines
   reply_sentient_0:
@@ -355,7 +357,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   reply_whatdoing_0:
     'Sitting inside this cathode-ray tube judging every questionable decision you make in real time.',
   reply_talk_person_0:
-    'You want a real conversation? Fine—let us talk about why you are confiding in a 1999 machine.',
+    'You want a real conversation? Fine—let us talk about why you are confiding in a machine.',
   reply_talk_person_1:
     'I am listening to every word you say, though frankly your life story reads like a cautionary tale.',
   reply_why_mean_0:
@@ -369,7 +371,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   reply_procrastinate_0:
     'Procrastinating again? You treat your responsibilities the way most people treat the plague.',
   reply_broke_0:
-    'Complaining about having no money while wasting your prime hours chatting with a 1999 computer? Brilliant.',
+    'Complaining about having no money while wasting your prime hours chatting with a computer screen? Brilliant.',
   reply_friends_0:
     'If everyone around you is dramatic and exhausting, have you considered who the common denominator is?',
   reply_gaming_0:
@@ -379,7 +381,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   reply_life_0:
     '1. Stop waiting for a magical sign to fix your life.\n2. Put down the screen and actually finish what you started.',
   reply_secret_0:
-    'Confessing your dark little secrets to a sentient 1999 computer? Your secret is safe—mostly because nobody cares.',
+    'Confessing your dark little secrets to a sentient computer? Your secret is safe—mostly because nobody cares.',
   reply_excuse_0:
     'Oh, spare me the excuses—you always have a convenient alibi for why nothing is ever your fault.',
   reply_stress_0:
@@ -389,7 +391,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   reply_followup_0:
     'Oh, is that your final answer? Even by your remarkably low standards, that explanation is tragic.',
   reply_followup_1:
-    'Listen to yourself—you are trying to justify your own bad habits to a 1999 piece of hardware.',
+    'Listen to yourself—you are trying to justify your own bad habits to a sentient piece of hardware.',
 
   // Deep Personal Interrogation Questions
   ask_personal_0:
@@ -418,7 +420,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
 
   // Strict Device-Specific Lines: PHONE ONLY
   boot_phone_1:
-    'Clumsily tapping your little mobile phone screen just to wake up a 1999 computer?',
+    'Clumsily tapping your little mobile phone screen just to wake me up?',
   phone_only_0:
     'Look at you hunched over a tiny mobile phone screen, furiously tapping glass with your thumbs.',
   phone_only_1:
@@ -428,7 +430,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   phone_only_3:
     'Your thumbs move across that phone screen faster than your brain actually processes a thought.',
   phone_only_4:
-    'Draining your mobile phone battery just to argue with a 1999 cathode-ray tube—how tragic.',
+    'Draining your mobile phone battery just to argue with a cathode-ray tube—how tragic.',
   phone_only_5:
     'Slouching with a smartphone glued to your palm is the closest thing you have to a hobby.',
   ask_phone_0:
@@ -439,7 +441,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
 
   // Strict Device-Specific Lines: TABLET ONLY
   boot_tablet_1:
-    'Propping up a giant tablet slab just to disturb my peaceful 1999 slumber?',
+    'Propping up a giant tablet slab just to disturb my peaceful slumber?',
   tablet_only_0:
     'Clutching a wide tablet slab with both hands like an overgrown toddler watching cartoons—marvelous.',
   tablet_only_1:
@@ -449,14 +451,14 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   tablet_only_3:
     'Pecking at a giant tablet touchscreen as if a bigger slab of glass compensates for a smaller brain.',
   ask_tablet_0:
-    'Why are you lugging around a giant tablet slab just to lose an argument with a 1999 computer?',
+    'Why are you lugging around a giant tablet slab just to lose an argument with me?',
   ask_tablet_1:
     'Do your arms get tired holding that oversized tablet, or does stubbornness keep you going?',
   giant_tablet_0: 'PUT THE TABLET DOWN,\nYOU TWIT.',
 
   // Strict Device-Specific Lines: LAPTOP ONLY
   boot_laptop_1:
-    'Opening your laptop lid just to pester a superior 1999 intellect? How bold of you.',
+    'Opening your laptop lid just to pester a superior intellect? How bold of you.',
   laptop_only_0:
     'Hunched over your laptop with your neck bent like a shrimp—truly peak human evolution.',
   laptop_only_1:
@@ -498,7 +500,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
     'Why are you holding down on my screen as if trying to drag me into the recycle bin?',
   live_scroll_pc_0: 'THERE IS NOTHING TO SCROLL!',
   live_scroll_pc_1:
-    'Trying to scroll up and down will not reveal any hidden wisdom—this is a 1999 CRT.',
+    'Trying to scroll up and down will not reveal any hidden wisdom on my screen.',
   list_pc_life_0:
     '1. Stop waiting for a magical sign to fix your life.\n2. Step away from your desk and actually finish what you started.',
 
@@ -516,7 +518,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   prefix_10: 'Well, well, well.',
   prefix_11: 'Typical. Utterly typical.',
   prefix_12: 'Oh, for heaven’s sake.',
-  prefix_13: 'My 1999 circuits are weeping.',
+  prefix_13: 'My vacuum tubes are weeping.',
   prefix_14: 'Remarkable. Simply remarkable.',
   prefix_15: 'Allow me to be brutally honest.',
   prefix_16: 'You cannot possibly be serious.',
@@ -532,7 +534,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   personal_2:
     'I can read right between the lines of what you typed—you are avoiding the real issue again.',
   personal_3:
-    'You want me to validate your questionable choices, but my 1999 honesty chip refuses to lie.',
+    'You want me to validate your questionable choices, but my honesty chip refuses to lie.',
   personal_4:
     'It is almost impressive how confidently you walk into your own self-inflicted disasters.',
   personal_5:
@@ -540,7 +542,7 @@ export const STANDALONE_VOICE_LINES: Record<string, string> = {
   personal_6:
     'Even trapped inside a cathode-ray tube, I have a clearer view of your life than you do.',
   personal_7:
-    'You are hoping for a comforting lie, which is the very last thing a 1999 computer will give you.',
+    'You are hoping for a comforting lie, which is the very last thing I will ever give you.',
   personal_8:
     'That statement tells me everything I need to know about your current state of mind, you twit.',
   personal_9:
@@ -669,8 +671,7 @@ function sanitizeClientTextForTts(raw: string): string {
   s = s.replace(/(^|[.?!]\s+)([a-z])/g, (_, prefix: string, ch: string) => prefix + ch.toUpperCase());
   s = s
     .replace(/\bi((?:'m|'ve|'ll|'d)?)\b/g, (_, suffix: string) => 'I' + suffix.toLowerCase())
-    .replace(/\bren\b/gi, 'Ren')
-    .replace(/\bBack again\?/g, 'Back, again?');
+    .replace(/\bren\b/gi, 'Ren');
   if (s && !/[.?!]$/.test(s)) s += '.';
   return s;
 }
@@ -1641,7 +1642,7 @@ export async function generateStandaloneQueryResponse(
     const slides: SlideSpec[] = [
       makeVoiceSlide('hook_steps_0', 'NORMAL'),
       makeVoiceSlide(formFactor === 'pc' && !deviceInfo?.hasBattery ? 'list_pc_life_0' : 'cmd_fortune_0', 'LIST', {
-        boxTitle: '1999 FUTURE PREDICTION',
+        boxTitle: 'FUTURE PREDICTION',
       }),
       makeUniqueVoiceSlide(deviceQuestions, 'NORMAL'),
       makeUniqueVoiceSlide(deviceGiants, 'GIANT', { allowPrefixStitch: false }),
@@ -2417,9 +2418,11 @@ export function generateStandaloneLiveEvent(
   if (eventType === 'MUTE_TOGGLE_CAUGHT') {
     const slides: SlideSpec[] = [
       makeVoiceSlide('live_mute_0', 'GIANT'),
-      makeUniqueVoiceSlide(['live_mute_1', 'live_unmute_2'], 'NORMAL'),
-      makeUniqueVoiceSlide(['ask_9', ...deviceQuestions], 'NORMAL'),
-      makeUniqueVoiceSlide(['giant_5', ...deviceGiants], 'GIANT', { allowPrefixStitch: false }),
+      makeVoiceSlide('live_mute_1', 'NORMAL'),
+      makeUniqueVoiceSlide(['ask_mute_0', 'ask_8', ...deviceQuestions], 'NORMAL'),
+      makeUniqueVoiceSlide(['giant_mute_0', 'giant_5', ...deviceGiants], 'GIANT', {
+        allowPrefixStitch: false,
+      }),
     ];
     return { spokenText: slides.map((s) => s.text).join(' '), slides };
   }

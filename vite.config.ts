@@ -15,11 +15,11 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        includeAssets: ['icon.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
-          name: '1999 AI',
-          short_name: '1999 AI',
-          description: 'A downloadable 1999 monochrome teal CRT voice and command-line terminal with a cynical, hyper-aware British computer.',
+          name: 'The Sentient Computer',
+          short_name: 'The Sentient Computer',
+          description: 'A downloadable monochrome teal CRT voice and command-line terminal with a cynical, hyper-aware Sentient Computer.',
           theme_color: '#53B89A',
           background_color: '#0D2E24',
           display: 'standalone',

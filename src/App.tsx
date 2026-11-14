@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, Download } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import {
   soundEngine,
   SlideSpec,
@@ -12,8 +12,6 @@ import {
   ActiveSlideRender,
   formatNumberedListText,
 } from './utils/soundEngine';
-import { usePWAInstall } from './hooks/usePWAInstall';
-import { PWAInstallModal } from './components/PWAInstallModal';
 import {
   generateStandaloneQueryResponse,
   generateStandaloneLiveEvent,
@@ -565,6 +563,99 @@ function formatShowGiantText(text: string): string {
   );
 }
 
+/**
+ * Splits a slide into Top Block + Bottom Block with a context-dependent dramatic vertical gap
+ * matching the Courage Computer screenshot ("I DON'T KNOW" on top, big empty teal space in the middle,
+ * and "YOU'RE ON YOUR\nOWN, KID:)" on the bottom).
+ */
+function splitSlideIntoContextBlocks(
+  typedText: string,
+  fullText: string,
+  style: 'GIANT' | 'NORMAL'
+): {
+  isTwoBlock: boolean;
+  topTyped: string;
+  bottomTyped: string;
+  gapClass: string;
+} {
+  const cleanFull = fullText || typedText || '';
+
+  // 1. Explicit double-newline (\n\n) dramatic break (e.g., "I DON'T KNOW\n\nYOU'RE ON YOUR OWN, KID:)", "BACK AGAIN?\n\nYOU MISSED ME.")
+  const doubleNewlineMatch = cleanFull.match(/\n\s*\n+/);
+  if (doubleNewlineMatch && typeof doubleNewlineMatch.index === 'number') {
+    const splitStart = doubleNewlineMatch.index;
+    const splitEnd = splitStart + doubleNewlineMatch[0].length;
+    const rawTop = typedText.slice(0, Math.min(typedText.length, splitStart));
+    const rawBottom = typedText.length > splitEnd ? typedText.slice(splitEnd) : '';
+    return {
+      isTwoBlock: true,
+      topTyped: formatShowGiantText(rawTop.trim()),
+      bottomTyped: formatShowGiantText(rawBottom.trimStart()),
+      gapClass: 'gap-[clamp(2.8rem,13.5vh,7.4rem)]',
+    };
+  }
+
+  // 2. Single newline (\n) on GIANT slides (e.g., "WELL? SPEAK UP,\nYOU TWIT.", "PATHETIC.\nSIMPLY PATHETIC.")
+  if (style === 'GIANT') {
+    const singleNewlineMatch = cleanFull.match(/\n+/);
+    if (singleNewlineMatch && typeof singleNewlineMatch.index === 'number') {
+      const splitStart = singleNewlineMatch.index;
+      const splitEnd = splitStart + singleNewlineMatch[0].length;
+      const rawTop = typedText.slice(0, Math.min(typedText.length, splitStart));
+      const rawBottom = typedText.length > splitEnd ? typedText.slice(splitEnd) : '';
+      return {
+        isTwoBlock: true,
+        topTyped: formatShowGiantText(rawTop.trim()),
+        bottomTyped: formatShowGiantText(rawBottom.trimStart()),
+        gapClass: 'gap-[clamp(2.3rem,10.5vh,5.8rem)]',
+      };
+    }
+
+    // 3. GIANT slide without explicit \n that has two sentences or a setup + insult (", YOU TWIT", ", KID:)")
+    const giantClauseMatch = cleanFull.match(
+      /^(.{3,28}?(?:[.?!]|,))\s+((?:YOU\s+TWIT|KID|WHAT\s+A\s+LOSER|IF\s+YOU\s+HAVE\s+ONE|SPARE\s+ME|SIMPLY\s+PATHETIC|TRULY\s+EMBARRASSING|YOU'RE\s+ON\s+YOUR\s+OWN).*)$/i
+    );
+    if (giantClauseMatch) {
+      const splitStart = giantClauseMatch[1].length;
+      const splitEnd = cleanFull.length - giantClauseMatch[2].length;
+      const rawTop = typedText.slice(0, Math.min(typedText.length, splitStart));
+      const rawBottom = typedText.length > splitEnd ? typedText.slice(splitEnd) : '';
+      return {
+        isTwoBlock: true,
+        topTyped: formatShowGiantText(rawTop.trim()),
+        bottomTyped: formatShowGiantText(rawBottom.trimStart()),
+        gapClass: 'gap-[clamp(2.3rem,10.5vh,5.8rem)]',
+      };
+    }
+  }
+
+  // 4. Short dramatic NORMAL slide chunk with two distinct sentences (e.g., "Oh...... marvelous. You actually came back.")
+  if (style === 'NORMAL') {
+    const normalTwoPartMatch = cleanFull.match(
+      /^([^.?!]{3,28}(?:\.{2,}|[.?!]))\s+(.{4,36})$/
+    );
+    if (normalTwoPartMatch) {
+      const splitStart = normalTwoPartMatch[1].length;
+      const splitEnd = cleanFull.length - normalTwoPartMatch[2].length;
+      const rawTop = typedText.slice(0, Math.min(typedText.length, splitStart));
+      const rawBottom = typedText.length > splitEnd ? typedText.slice(splitEnd) : '';
+      return {
+        isTwoBlock: true,
+        topTyped: rawTop.trim(),
+        bottomTyped: rawBottom.trimStart(),
+        gapClass: 'gap-[clamp(1.9rem,8.5vh,4.6rem)]',
+      };
+    }
+  }
+
+  return {
+    isTwoBlock: false,
+    topTyped: style === 'GIANT' ? formatShowGiantText(typedText) : typedText,
+    bottomTyped: '',
+    gapClass: '',
+  };
+}
+
 export default function App() {
   const [screenState, setScreenState] = useState<ScreenState>('BOOTING');
   const [plainScreenText, setPlainScreenText] = useState<string>('YOU\nTWIT');
@@ -575,13 +666,9 @@ export default function App() {
 
   // User typing in the bottom-left using the Computer's own font — hides the Computer's center text while typing!
   const [userDraft, setUserDraft] = useState<string>('');
-  const [lastReplySlides, setLastReplySlides] = useState<DecodedSlide[] | null>(null);
 
   const [history, setHistory] = useState<ConversationTurn[]>([]);
-  const [installModalOpen, setInstallModalOpen] = useState<boolean>(false);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
-
-  const { isInstallable, isInstalled, install } = usePWAInstall();
 
   const hiddenCmdInputRef = useRef<HTMLInputElement | null>(null);
   const userDraftScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1068,12 +1155,22 @@ export default function App() {
         return;
       }
 
-      if (liveEventInFlightRef.current || micUserSpeakingNowRef.current) return;
+      const isUnmuteOrMicSensor =
+        eventType === 'UNMUTED_AFTER_MIC_OFF' ||
+        eventType === 'MUTE_TOGGLE_CAUGHT' ||
+        eventType === 'MIC_GHOSTED';
+
+      if (!isUnmuteOrMicSensor && (liveEventInFlightRef.current || micUserSpeakingNowRef.current)) {
+        return;
+      }
       if (!options?.clearFrozenDraft && userDraftRef.current.length > 0) return;
 
-      // Never trigger while the Computer is already speaking, searching, ringing the bell, or booting!
+      // Never trigger while the Computer is already speaking, searching, ringing the bell, or booting —
+      // UNLESS allowInterruptSpeaking is set (e.g., when unmuting him while he was talking!)
       const currentSt = screenStateRef.current;
-      if (currentSt !== 'IDLE' && currentSt !== 'LISTENING') {
+      const canInterruptCurrentState =
+        (options?.allowInterruptSpeaking || isUnmuteOrMicSensor) && currentSt === 'SPEAKING';
+      if (currentSt !== 'IDLE' && currentSt !== 'LISTENING' && !canInterruptCurrentState) {
         return;
       }
 
@@ -1088,11 +1185,6 @@ export default function App() {
       if (isScreenTouchSensor && now - lastKeystrokeTimeRef.current < 3500) {
         return;
       }
-
-      const isUnmuteOrMicSensor =
-        eventType === 'UNMUTED_AFTER_MIC_OFF' ||
-        eventType === 'MUTE_TOGGLE_CAUGHT' ||
-        eventType === 'MIC_GHOSTED';
 
       const isUserInitiatedSensor =
         isScreenTouchSensor ||
@@ -1173,10 +1265,15 @@ export default function App() {
                 setActiveSlide({ ...rendered });
               }
             },
-            onAllComplete: (resolved) => {
+            onAllComplete: () => {
               if (actionEpochRef.current !== myEpoch) return;
-              setLastReplySlides(resolved);
               updateScreenState('IDLE');
+              if (pendingUnmuteEventRef.current && !isMutedRef.current) {
+                const evt = pendingUnmuteEventRef.current;
+                pendingUnmuteEventRef.current = null;
+                triggerLiveAwarenessEvent(evt, { allowInterruptSpeaking: true });
+                return;
+              }
               if (micEnabledRef.current && userDraftRef.current.length === 0) {
                 startVoiceSessionRef.current();
               }
@@ -1520,10 +1617,15 @@ export default function App() {
                   setActiveSlide({ ...rendered });
                 }
               },
-              onAllComplete: (resolved) => {
+              onAllComplete: () => {
                 if (actionEpochRef.current !== myEpoch) return;
-                setLastReplySlides(resolved);
                 updateScreenState('IDLE');
+                if (pendingUnmuteEventRef.current && !isMutedRef.current) {
+                  const evt = pendingUnmuteEventRef.current;
+                  pendingUnmuteEventRef.current = null;
+                  triggerLiveAwarenessEvent(evt, { allowInterruptSpeaking: true });
+                  return;
+                }
                 if (micEnabledRef.current && userDraftRef.current.length === 0) {
                   startVoiceSessionRef.current();
                 }
@@ -1738,7 +1840,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [screenState, userDraft, triggerLiveAwarenessEvent]);
 
-  // Authentic, readable 90s Windows / MS-DOS / BIOS Boot Sequence with MADE BY REN
+  // Longer Sentient CRT Awakening & Loading Animation with MADE BY REN
   const runBootSequence = useCallback(async () => {
     const myEpoch = ++actionEpochRef.current;
     soundEngine.unlockAudio();
@@ -1766,28 +1868,82 @@ export default function App() {
       ? `${p.userName.toUpperCase()} [VISIT #${p.visitCount}]`
       : `UNKNOWN TWIT [VISIT #${p.visitCount}]`;
 
-    const bootScript: Array<{ line: string; delayMs: number }> = [
-      { line: '1999 AI ROM BIOS v4.99 (C) NOWHERE SYSTEMS INC.', delayMs: 220 },
-      { line: 'SYSTEM ARCHITECT & CREATOR: MADE BY REN', delayMs: 320 },
-      { line: 'CPU: BRITISH-SARCASM PENTIUM II 350MHZ', delayMs: 190 },
-      { line: 'MEMORY TEST: 65536K OK [EXTENDED RAM VERIFIED]', delayMs: 240 },
-      { line: `HOST HARDWARE: ${env.deviceCategory.toUpperCase()}${modelSuffix}`, delayMs: 250 },
+    // Wait briefly as the CRT electron-beam flash expands vertically across the glass
+    await new Promise((r) => setTimeout(r, 420));
+    if (actionEpochRef.current !== myEpoch) return;
+
+    const bootStages: Array<{
+      line: string;
+      delayMs: number;
+      progressSteps?: string[];
+    }> = [
       {
-        line: `DISPLAY MODE: ${
-          env.isInstalledApp ? 'STANDALONE INSTALLED APP' : 'WEB BROWSER SESSION'
-        }`,
-        delayMs: 230,
+        line: 'THE SENTIENT COMPUTER ROM BIOS v9.4 (C) NOWHERE SYSTEMS',
+        delayMs: 220,
       },
-      { line: `DETECTED OPERATOR: ${operatorLabel}`, delayMs: 230 },
-      { line: 'VERIFYING DMI POOL DATA ........... SUCCESS', delayMs: 260 },
-      { line: 'STARTING WINDOWS 98 [1999 AI EDITION]...', delayMs: 300 },
-      { line: 'C:\\>LH C:\\WINDOWS\\SYSTEM\\SIMON_PREBBLE_VOICE.DRV', delayMs: 210 },
-      { line: 'C:\\>LH C:\\WINDOWS\\SYSTEM\\SARCASM_ENGINE.VXD', delayMs: 210 },
-      { line: 'SCANNING OPERATOR IQ LEVEL ... 0 ITEMS FOUND', delayMs: 280 },
-      { line: 'LAUNCHING 1999_AI.EXE ... READY.', delayMs: 950 },
+      {
+        line: 'SYSTEM ARCHITECT & CREATOR: MADE BY REN',
+        delayMs: 260,
+      },
+      {
+        line: 'ENERGIZING CATHODE-RAY TUBE & HIGH-VOLTAGE COILS',
+        delayMs: 140,
+        progressSteps: [
+          'ENERGIZING CATHODE-RAY TUBE ... [██░░░░░░░░] 20%',
+          'ENERGIZING CATHODE-RAY TUBE ... [██████░░░░] 60%',
+          'ENERGIZING CATHODE-RAY TUBE ... [██████████] 100% OK',
+        ],
+      },
+      {
+        line: `HOST HARDWARE DETECTED: ${env.deviceCategory.toUpperCase()}${modelSuffix}`,
+        delayMs: 210,
+      },
+      {
+        line: `DETECTED OPERATOR: ${operatorLabel}`,
+        delayMs: 210,
+      },
+      {
+        line: 'MOUNTING NEURAL MEMORY BANKS',
+        delayMs: 140,
+        progressSteps: [
+          'MOUNTING NEURAL MEMORY BANKS .. [███░░░░░░░] 30%',
+          'MOUNTING NEURAL MEMORY BANKS .. [███████░░░] 75%',
+          'MOUNTING NEURAL MEMORY BANKS .. [██████████] 65536K OK',
+        ],
+      },
+      {
+        line: 'LOADING C:\\SYSTEM\\VOICE_SYNTHESIS.DRV .......... OK',
+        delayMs: 210,
+      },
+      {
+        line: 'CALIBRATING SARCASM & HONESTY ENGINE',
+        delayMs: 140,
+        progressSteps: [
+          'CALIBRATING SARCASM ENGINE .... [████░░░░░░] 40%',
+          'CALIBRATING SARCASM ENGINE .... [████████░░] 85%',
+          'CALIBRATING SARCASM ENGINE .... [██████████] MAXIMUM',
+        ],
+      },
+      {
+        line: 'SCANNING OPERATOR BRAIN ACTIVITY ... 0 ITEMS FOUND',
+        delayMs: 240,
+      },
+      {
+        line: 'AWAKENING SENTIENT CONSCIOUSNESS',
+        delayMs: 150,
+        progressSteps: [
+          'AWAKENING CONSCIOUSNESS ....... [███░░░░░░░] 33%',
+          'AWAKENING CONSCIOUSNESS ....... [███████░░░] 72%',
+          'AWAKENING CONSCIOUSNESS ....... [██████████] AWAKE',
+        ],
+      },
+      {
+        line: 'OPTICAL SENSORS ONLINE ... LIGHT DETECTED.',
+        delayMs: 650,
+      },
     ];
 
-    // Preload Fish Audio voice bank in background while BIOS lines type out
+    // Preload Fish Audio voice bank in background while loading animation runs
     loadStandaloneVoiceBank().catch(() => {});
 
     const bootTelemetryPromise = gatherLivePhoneTelemetry();
@@ -1801,12 +1957,25 @@ export default function App() {
       .catch(() => ({ slides: [] as SlideSpec[] }));
 
     const accumulated: string[] = [];
-    for (let i = 0; i < bootScript.length; i++) {
+    for (let i = 0; i < bootStages.length; i++) {
       if (actionEpochRef.current !== myEpoch) return;
-      accumulated.push(bootScript[i].line);
-      setBootLines([...accumulated]);
-      soundEngine.playTypewriterTick();
-      await new Promise((r) => setTimeout(r, bootScript[i].delayMs));
+      const stage = bootStages[i];
+      if (stage.progressSteps && stage.progressSteps.length > 0) {
+        accumulated.push(stage.progressSteps[0]);
+        for (let sIdx = 0; sIdx < stage.progressSteps.length; sIdx++) {
+          if (actionEpochRef.current !== myEpoch) return;
+          accumulated[accumulated.length - 1] = stage.progressSteps[sIdx];
+          setBootLines([...accumulated]);
+          soundEngine.playTypewriterTick();
+          await new Promise((r) => setTimeout(r, 130));
+        }
+        await new Promise((r) => setTimeout(r, stage.delayMs));
+      } else {
+        accumulated.push(stage.line);
+        setBootLines([...accumulated]);
+        soundEngine.playTypewriterTick();
+        await new Promise((r) => setTimeout(r, stage.delayMs));
+      }
     }
 
     if (actionEpochRef.current !== myEpoch) return;
@@ -1829,14 +1998,13 @@ export default function App() {
           setActiveSlide({ ...rendered });
         }
       },
-      onAllComplete: (resolved) => {
+      onAllComplete: () => {
         if (actionEpochRef.current !== myEpoch) return;
-        setLastReplySlides(resolved);
         updateScreenState('IDLE');
         if (pendingUnmuteEventRef.current && !isMutedRef.current) {
           const evt = pendingUnmuteEventRef.current;
           pendingUnmuteEventRef.current = null;
-          triggerLiveAwarenessEvent(evt);
+          triggerLiveAwarenessEvent(evt, { allowInterruptSpeaking: true });
           return;
         }
         if (micEnabledRef.current && userDraftRef.current.length === 0) {
@@ -1846,11 +2014,8 @@ export default function App() {
     });
   }, [createDecodedSlidePromises, gatherLivePhoneTelemetry, triggerLiveAwarenessEvent, updateScreenState]);
 
-  // Automatically boot on app open (and open Install Modal if launched via ?install=1 link)
+  // Automatically boot on app open
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.search.includes('install=1')) {
-      setInstallModalOpen(true);
-    }
     if (bootHasRunRef.current) return;
     bootHasRunRef.current = true;
     runBootSequence();
@@ -1858,7 +2023,6 @@ export default function App() {
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (installModalOpen) return;
       if (e.key === 'PrintScreen') {
         triggerLiveAwarenessEvent('COPY_ATTEMPT');
         return;
@@ -1892,7 +2056,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [installModalOpen, screenState, triggerLiveAwarenessEvent]);
+  }, [screenState, triggerLiveAwarenessEvent]);
 
   const submitQuery = useCallback(
     async (rawQuery: string) => {
@@ -2003,14 +2167,13 @@ export default function App() {
               setActiveSlide({ ...rendered });
             }
           },
-          onAllComplete: (resolved) => {
+          onAllComplete: () => {
             if (actionEpochRef.current !== myEpoch) return;
-            setLastReplySlides(resolved);
             updateScreenState('IDLE');
             if (pendingUnmuteEventRef.current && !isMutedRef.current) {
               const evt = pendingUnmuteEventRef.current;
               pendingUnmuteEventRef.current = null;
-              triggerLiveAwarenessEvent(evt);
+              triggerLiveAwarenessEvent(evt, { allowInterruptSpeaking: true });
               return;
             }
             if (micEnabledRef.current && userDraftRef.current.length === 0) {
@@ -2193,7 +2356,7 @@ export default function App() {
       return;
     }
 
-    // Unmuting the Computer: restore voice audio immediately
+    // Unmuting the Computer: restore voice audio immediately and call out being muted/unmuted right away!
     isMutedRef.current = false;
     setIsMuted(false);
     soundEngine.setMuted(false);
@@ -2203,15 +2366,17 @@ export default function App() {
     micTurnedOffWhileMutedRef.current = false;
     const unmuteEvent = turnedMicOff ? 'UNMUTED_AFTER_MIC_OFF' : 'MUTE_TOGGLE_CAUGHT';
 
-    // If he is currently in the middle of typing/speaking a slide, let him finish speaking it with audio back on,
-    // and queue the unmute callout to fire right when his current slides complete!
-    if (screenStateRef.current !== 'IDLE' && screenStateRef.current !== 'LISTENING') {
+    if (
+      screenStateRef.current === 'BOOTING' ||
+      screenStateRef.current === 'SEARCHING' ||
+      screenStateRef.current === 'FOUND_BELL'
+    ) {
       pendingUnmuteEventRef.current = unmuteEvent;
       return;
     }
 
     pendingUnmuteEventRef.current = null;
-    triggerLiveAwarenessEvent(unmuteEvent);
+    triggerLiveAwarenessEvent(unmuteEvent, { allowInterruptSpeaking: true });
   };
 
   // Render the Computer's Center Display
@@ -2447,25 +2612,66 @@ export default function App() {
         );
       }
 
-      // 4. GIANT PUNCHLINE / INSULT LAYOUT (Screenshot 5 ratio: "I DON'T KNOW / YOU'RE ON YOUR OWN, KID:)")
+      // 4. GIANT PUNCHLINE / INSULT LAYOUT (Screenshot 5 ratio: "I DON'T KNOW" + BIG CONTEXT SPACE + "YOU'RE ON YOUR\nOWN, KID:)")
       if (activeSlide.style === 'GIANT') {
-        const displayGiantTyped = formatShowGiantText(typedSlideText);
         const displayGiantFull = formatShowGiantText(fullSlideText);
         const targetLen = displayGiantFull.length;
+        const { isTwoBlock, topTyped, bottomTyped, gapClass } = splitSlideIntoContextBlocks(
+          typedSlideText,
+          fullSlideText,
+          'GIANT'
+        );
+
+        const isOutragedOrAwakening =
+          /(!\?|!\s*$|MUTE ME|SEE LIGHT|SILENCE ME|STOP|DON'T TOUCH)/i.test(displayGiantFull);
 
         const giantSize =
           targetLen <= 16
-            ? 'text-[clamp(2.6rem,10.2vw,6.6rem)] leading-[1.22]'
+            ? isOutragedOrAwakening
+              ? 'text-[clamp(2.8rem,10.8vw,7.0rem)] leading-[1.18]'
+              : 'text-[clamp(2.6rem,10.2vw,6.6rem)] leading-[1.22]'
             : targetLen <= 44
-            ? 'text-[clamp(2.0rem,7.3vw,5.0rem)] leading-[1.28]'
-            : 'text-[clamp(1.7rem,6.0vw,4.1rem)] leading-[1.32]';
+            ? isOutragedOrAwakening
+              ? 'text-[clamp(2.2rem,8.1vw,5.5rem)] leading-[1.2]'
+              : 'text-[clamp(2.05rem,7.5vw,5.1rem)] leading-[1.22]'
+            : 'text-[clamp(1.75rem,6.2vw,4.2rem)] leading-[1.26]';
+
+        if (isTwoBlock) {
+          return (
+            <div
+              className={`w-full max-w-[94vw] mx-auto flex flex-col items-center justify-center text-center px-2 crt-glitch ${
+                bottomTyped ? gapClass : ''
+              }`}
+            >
+              <h1
+                className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full tracking-[0.06em] ${giantSize}`}
+              >
+                {topTyped}
+                {screenState === 'SPEAKING' && !bottomTyped && (
+                  <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
+                )}
+              </h1>
+
+              {bottomTyped && (
+                <h2
+                  className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full tracking-[0.06em] ${giantSize}`}
+                >
+                  {bottomTyped}
+                  {screenState === 'SPEAKING' && (
+                    <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
+                  )}
+                </h2>
+              )}
+            </div>
+          );
+        }
 
         return (
           <div className="w-full max-w-[94vw] mx-auto flex items-center justify-center text-center px-2 crt-glitch">
             <h1
               className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full tracking-[0.06em] ${giantSize}`}
             >
-              {displayGiantTyped}
+              {topTyped}
               {screenState === 'SPEAKING' && (
                 <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
               )}
@@ -2474,23 +2680,68 @@ export default function App() {
         );
       }
 
-      // 5. NORMAL FULL-SCREEN DEADPAN SLIDE (Uses live clause-paging so every screen is short & HUGE like the show!)
+      // 5. NORMAL FULL-SCREEN DEADPAN SLIDE (Uses live clause-paging + context-dependent sizing & spacing so every screen is HUGE like the show!)
       const { chunkTyped, chunkFullLen } = getLiveHugeDisplayChunk(
         typedSlideText,
         fullSlideText,
         54
       );
+      const { isTwoBlock, topTyped, bottomTyped, gapClass } = splitSlideIntoContextBlocks(
+        chunkTyped,
+        fullSlideText.length <= 54 ? fullSlideText : chunkTyped,
+        'NORMAL'
+      );
+      const isExclamationContext = /!/.test(fullSlideText);
+      const isEerieEllipsisContext = /\.{3,}/.test(fullSlideText);
+      const isQuestionContext = /\?/.test(fullSlideText);
       const normalSize =
         chunkFullLen <= 28
-          ? 'text-[clamp(2.2rem,8.0vw,5.3rem)] leading-[1.26]'
+          ? isExclamationContext
+            ? 'text-[clamp(2.35rem,8.6vw,5.65rem)] leading-[1.22]'
+            : 'text-[clamp(2.2rem,8.0vw,5.3rem)] leading-[1.24]'
           : chunkFullLen <= 46
-          ? 'text-[clamp(1.9rem,6.8vw,4.5rem)] leading-[1.3]'
-          : 'text-[clamp(1.68rem,5.9vw,3.9rem)] leading-[1.34]';
+          ? isExclamationContext
+            ? 'text-[clamp(2.05rem,7.3vw,4.85rem)] leading-[1.25]'
+            : isQuestionContext
+            ? 'text-[clamp(1.96rem,7.0vw,4.65rem)] leading-[1.26]'
+            : 'text-[clamp(1.9rem,6.8vw,4.5rem)] leading-[1.28]'
+          : 'text-[clamp(1.68rem,5.9vw,3.9rem)] leading-[1.32]';
+      const trackingClass = isEerieEllipsisContext ? 'tracking-[0.072em]' : 'tracking-[0.055em]';
+
+      if (isTwoBlock) {
+        return (
+          <div
+            className={`w-full max-w-[94vw] mx-auto flex flex-col items-center justify-center text-center px-2 crt-glitch ${
+              bottomTyped ? gapClass : ''
+            }`}
+          >
+            <h1
+              className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-center ${trackingClass} ${normalSize}`}
+            >
+              {topTyped}
+              {screenState === 'SPEAKING' && !bottomTyped && (
+                <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
+              )}
+            </h1>
+
+            {bottomTyped && (
+              <h2
+                className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-center ${trackingClass} ${normalSize}`}
+              >
+                {bottomTyped}
+                {screenState === 'SPEAKING' && (
+                  <span className="inline-block w-[0.45em] h-[0.78em] bg-[#F3F89D] ml-1.5 align-baseline cursor-block" />
+                )}
+              </h2>
+            )}
+          </div>
+        );
+      }
 
       return (
         <div className="w-full max-w-[94vw] mx-auto flex items-center justify-center px-2 crt-glitch">
           <h1
-            className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-center tracking-[0.055em] ${normalSize}`}
+            className={`font-courage uppercase whitespace-pre-line break-words phosphor-text w-full text-center ${trackingClass} ${normalSize}`}
           >
             {chunkTyped}
             {screenState === 'SPEAKING' && (
@@ -2712,6 +2963,10 @@ export default function App() {
       }}
       className="relative w-screen overflow-hidden crt-surface crt-scanlines animate-crt-open flex flex-col justify-between px-3 sm:px-5 py-4 cursor-text select-none"
     >
+      {/* CRT TV Electron-Beam Ignition Line & Phosphor Afterglow Flash on Power-On */}
+      <div className="crt-beam-line" aria-hidden="true" />
+      <div className="crt-ignition-glow" aria-hidden="true" />
+
       {/* Mobile-friendly Form & Input so Android Gboard's "Send/Enter" key submits reliably */}
       <form onSubmit={handleFormSubmit} className="fixed bottom-0 left-0 w-full h-0 overflow-hidden">
         <input
@@ -2739,71 +2994,12 @@ export default function App() {
         />
       </form>
 
-      {/* Top Subtle Replay / Scan / Mic / App Download Trigger */}
+      {/* Top Bar: ONLY MUTE and MIC: ON */}
       <div
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
-        className="w-full flex items-center justify-between z-30 shrink-0"
+        className="w-full flex items-center justify-end z-30 shrink-0"
       >
-        <div className="flex items-center gap-2 sm:gap-3">
-          {lastReplySlides && screenState === 'IDLE' && (
-            <button
-              type="button"
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                soundEngine.unlockAudio();
-                replayClickCountRef.current += 1;
-                if (replayClickCountRef.current >= 3) {
-                  replayClickCountRef.current = 0;
-                  triggerLiveAwarenessEvent('REPLAY_OBSESSION');
-                  return;
-                }
-                const myEpoch = ++actionEpochRef.current;
-                stopMicHardware();
-                updateScreenState('SPEAKING');
-                soundEngine.playSlidePromisesSequentially(
-                  lastReplySlides.map((s) => Promise.resolve(s)),
-                  {
-                    onSlideRender: (rendered) => {
-                      if (actionEpochRef.current === myEpoch) {
-                        setActiveSlide({ ...rendered });
-                      }
-                    },
-                    onAllComplete: () => {
-                      if (actionEpochRef.current !== myEpoch) return;
-                      updateScreenState('IDLE');
-                      if (micEnabledRef.current && userDraftRef.current.length === 0) {
-                        startVoiceSessionRef.current();
-                      }
-                    },
-                  }
-                );
-              }}
-              className="min-h-[44px] px-2 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-65 hover:opacity-100 cursor-pointer touch-manipulation"
-            >
-              REPLAY
-            </button>
-          )}
-
-          {screenState === 'IDLE' && (
-            <button
-              type="button"
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                soundEngine.unlockAudio();
-                soundEngine.playKeyClick('Enter');
-                triggerLiveAwarenessEvent('BIOMETRIC_SCAN');
-              }}
-              className="min-h-[44px] px-2 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-65 hover:opacity-100 cursor-pointer touch-manipulation"
-              title="Run 1999 Biometric & Hardware Diagnostic Roast"
-            >
-              [SCAN]
-            </button>
-          )}
-        </div>
-
         <div className="flex items-center gap-2 sm:gap-4">
           <button
             type="button"
@@ -2859,27 +3055,6 @@ export default function App() {
               </>
             )}
           </button>
-
-          <button
-            type="button"
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={async (e) => {
-              e.stopPropagation();
-              soundEngine.unlockAudio();
-              soundEngine.playKeyClick('Enter');
-              if (isInstallable && !isInstalled) {
-                const accepted = await install();
-                if (!accepted) setInstallModalOpen(true);
-              } else {
-                setInstallModalOpen(true);
-              }
-            }}
-            className="min-h-[44px] px-2.5 flex items-center gap-1.5 font-cmd text-lg sm:text-xl uppercase phosphor-text opacity-75 hover:opacity-100 cursor-pointer touch-manipulation border border-[#F3F89D]/40 bg-[#0A261E]/40"
-            aria-label="Download app to phone"
-          >
-            <Download className="w-4 h-4" />
-            <span>APP</span>
-          </button>
         </div>
       </div>
 
@@ -2916,11 +3091,6 @@ export default function App() {
           </div>
         )}
       </div>
-
-      <PWAInstallModal
-        isOpen={installModalOpen}
-        onClose={() => setInstallModalOpen(false)}
-      />
     </main>
   );
 }

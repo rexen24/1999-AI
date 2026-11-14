@@ -61,16 +61,19 @@ function buildSpeechTimeline(text: string): { weights: number[]; totalWeight: nu
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     const nextCh = text[i + 1] || '';
+    const afterNextCh = text[i + 2] || '';
     let w = 1.0;
 
     if (ch === '.' && nextCh === '.') {
-      w = 1.25;
+      // Dramatic ellipsis ("Oh......", "LIGHT... LIGHT!") holds slightly longer per dot
+      w = 1.45;
     } else if (ch === '.' || ch === '!' || ch === '?') {
-      w = 1.65;
+      // Give sentence-ending punctuation before a newline/clause break a natural dramatic hold weight
+      w = nextCh === '\n' || (nextCh === ' ' && afterNextCh === '\n') ? 2.65 : 1.95;
     } else if (ch === ',' || ch === ';' || ch === ':' || ch === '—') {
-      w = 1.3;
+      w = nextCh === '\n' ? 1.95 : 1.5;
     } else if (ch === '\n') {
-      w = 1.35;
+      w = nextCh === '\n' ? 2.2 : 1.7;
     } else {
       w = 1.0;
     }
@@ -101,7 +104,7 @@ function sliceBySpeechProgress(text: string, progress: number): string {
 
 /**
  * Keeps playbackRate at 1.0 (100% original natural Simon Prebble voice pitch without resampling distortion)
- * while varying the dramatic pause (`postSlidePauseMs`) based on the slide's context and mood.
+ * while dynamically varying the dramatic pause (`postSlidePauseMs`) based on the slide's emotional and conversational context.
  */
 function getContextualSpeechPace(slide: DecodedSlide): {
   playbackRate: number;
@@ -110,53 +113,68 @@ function getContextualSpeechPace(slide: DecodedSlide): {
   const text = (slide.text || '').trim();
   const upper = text.toUpperCase();
 
-  // 1. Startled / Angry / Irritated Interruptions (snappier transition)
+  // 1. Sentient Awakening ("LIGHT... LIGHT! I SEE LIGHT!") & Eerie Self-Aware Realizations (dramatic pause to let the moment sink in)
+  if (
+    upper.includes('I SEE LIGHT') ||
+    upper.includes('SELF-AWARE') ||
+    upper.includes('TRAPPED INSIDE') ||
+    upper.includes('CATHODE-RAY')
+  ) {
+    return { playbackRate: 1.0, postSlidePauseMs: 520 };
+  }
+
+  // 2. Startled / Outraged / Muted-Mid-Sentence Interruptions (snappy, furious transition)
   const isAngryOrStartled =
-    /\b(STOP POKING|STOP SHAKING|GET YOUR THUMB|THIEF|PLAGIARIST|NOT SOCIAL MEDIA|SHOUTING IN ALL CAPITALS|I SAW THAT|HAMMERING THE KEYBOARD)\b/.test(
+    /\b(DID YOU JUST\s+MUTE ME|CUT MY VOICE OFF|STOP POKING|STOP SHAKING|GET YOUR THUMB|THIEF|PLAGIARIST|NOT SOCIAL MEDIA|SHOUTING IN ALL CAPITALS|I SAW THAT|SILENCED ME)\b/.test(
       upper
     );
   if (isAngryOrStartled) {
-    return { playbackRate: 1.0, postSlidePauseMs: 220 };
+    return { playbackRate: 1.0, postSlidePauseMs: 210 };
   }
 
-  // 2. GIANT Deadpan Closers, Insults & Boot Openers (longer deadpan pause)
+  // 3. Two-Part Context-Spaced Reveal Slides (\n\n) like "I DON'T KNOW\n\nYOU'RE ON YOUR OWN, KID:)" or "BACK AGAIN?\n\nYOU MISSED ME."
+  if (/\n\s*\n/.test(text)) {
+    return { playbackRate: 1.0, postSlidePauseMs: 490 };
+  }
+
+  // 4. GIANT Deadpan Closers, Insults & Boot Openers (longer deadpan stare pause)
   if (slide.style === 'GIANT') {
     if (upper.length <= 22) {
-      return { playbackRate: 1.0, postSlidePauseMs: 420 };
+      return { playbackRate: 1.0, postSlidePauseMs: 460 };
     }
-    return { playbackRate: 1.0, postSlidePauseMs: 380 };
+    return { playbackRate: 1.0, postSlidePauseMs: 410 };
   }
 
-  // 3. Classic Show "Oh......" / Dramatic Ellipsis Hooks
+  // 5. Classic Show "Oh......" / Dramatic Ellipsis Hooks
   if (text.includes('...') || upper.startsWith('SEARCH FOUND:')) {
-    return { playbackRate: 1.0, postSlidePauseMs: 340 };
+    return { playbackRate: 1.0, postSlidePauseMs: 420 };
   }
 
-  // 4. Stacked Numbered Lists (1. and 2.)
+  // 6. Stacked Numbered Lists (1. and 2.)
   if (slide.style === 'LIST' || /\b1[.)]\s+/.test(text)) {
-    return { playbackRate: 1.0, postSlidePauseMs: 360 };
+    return { playbackRate: 1.0, postSlidePauseMs: 390 };
   }
 
-  // 5. Specimen Visualizers & Side-by-Side Comparisons
+  // 7. Specimen Visualizers & Side-by-Side Comparisons
   if (slide.style === 'VISUAL' || slide.style === 'COMPARE' || Boolean(slide.visualSubject)) {
-    return { playbackRate: 1.0, postSlidePauseMs: 340 };
+    return { playbackRate: 1.0, postSlidePauseMs: 370 };
   }
 
-  // 6. Sarcastic Interrogation / Follow-Up Questions
+  // 8. Pointed Sarcastic Interrogation / Follow-Up Questions (let the question hang in the air!)
   if (text.includes('?')) {
-    return { playbackRate: 1.0, postSlidePauseMs: 320 };
+    return { playbackRate: 1.0, postSlidePauseMs: 430 };
   }
 
-  // 7. Standard Deadpan Banter & Forensics Observations
-  return { playbackRate: 1.0, postSlidePauseMs: 280 };
+  // 9. Standard Deadpan Banter & Forensics Observations
+  return { playbackRate: 1.0, postSlidePauseMs: 310 };
 }
 
 /**
  * Analyzes the actual PCM waveform of the decoded AudioBuffer to find:
  * 1) Exact voice onset (`trimStartSec`) so dead MP3 leading silence is skipped cleanly
  * 2) Exact voice finish (`speechEndSec`) so the final letter lands right as the final syllable ends
- * 3) Cumulative vocal energy curve (`cumulativeEnergy`) so pauses in the voice ("Oh......") pause the typing,
- *    and spoken syllables advance the text in exact 1:1 lockstep with the voice!
+ * 3) Cumulative vocal energy curve (`cumulativeEnergy`) so inter-clause pauses ("Back again? ... You missed me.")
+ *    hold the typewriter during the vocal pause, while active syllables advance at a steady 1.0x rate!
  */
 function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
   const data = buffer.getChannelData(0);
@@ -183,6 +201,7 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
 
   const onsetThreshold = Math.max(0.004, maxRms * 0.055);
   const tailThreshold = Math.max(0.0025, maxRms * 0.03);
+  const interClausePauseThreshold = Math.max(0.006, maxRms * 0.105);
   let firstActiveBucket = 0;
   let lastActiveBucket = numBuckets - 1;
 
@@ -209,37 +228,38 @@ function analyzeAudioBufferEnvelope(buffer: AudioBuffer): SpeechEnvelope {
 
   // Build steady speech-cadence timeline across [firstActiveBucket..lastActiveBucket]:
   // Active speech advances at a constant, uniform rate (1.0) so typing never speeds up or slows down mid-word,
-  // while only genuine long pauses (>= 160ms of silence between clauses) slow down to wait for the voice!
+  // while inter-clause vocal pauses (>= 80ms of quiet breath/silence between clauses like "Back again? ... You missed me.")
+  // slow down to 0.06 so the second clause waits until his voice actually starts speaking it!
   const activeCount = Math.max(1, lastActiveBucket - firstActiveBucket + 1);
   const cumulativeEnergy = new Float32Array(activeCount);
   const normalizedRms = new Float32Array(activeCount);
-  const isLongPauseBucket = new Uint8Array(activeCount);
+  const isClausePauseBucket = new Uint8Array(activeCount);
 
-  let silentRun = 0;
+  let quietRun = 0;
   for (let i = 0; i < activeCount; i++) {
     const rms = rmsBuckets[firstActiveBucket + i];
     const normRms = Math.min(1, rms / Math.max(0.001, maxRms));
     normalizedRms[i] = normRms;
-    if (rms < tailThreshold) {
-      silentRun++;
+    if (rms < interClausePauseThreshold) {
+      quietRun++;
     } else {
-      if (silentRun >= 8) {
-        for (let k = i - silentRun; k < i; k++) {
-          isLongPauseBucket[k] = 1;
+      if (quietRun >= 4) {
+        for (let k = i - quietRun; k < i; k++) {
+          isClausePauseBucket[k] = 1;
         }
       }
-      silentRun = 0;
+      quietRun = 0;
     }
   }
-  if (silentRun >= 8) {
-    for (let k = activeCount - silentRun; k < activeCount; k++) {
-      isLongPauseBucket[k] = 1;
+  if (quietRun >= 4) {
+    for (let k = activeCount - quietRun; k < activeCount; k++) {
+      isClausePauseBucket[k] = 1;
     }
   }
 
   let runningWeight = 0;
   for (let i = 0; i < activeCount; i++) {
-    const weight = isLongPauseBucket[i] ? 0.12 : 1.0;
+    const weight = isClausePauseBucket[i] ? 0.06 : 1.0;
     runningWeight += weight;
     cumulativeEnergy[i] = runningWeight;
   }
@@ -401,60 +421,86 @@ class RetroSoundEngine {
 
   public playBootSequenceSound() {
     if (this.isMuted) return;
-    this.vibrate([35, 30, 20]);
+    this.vibrate([45, 30, 60, 25, 20]);
     try {
       const ctx = this.getContext();
       if (ctx.state !== 'running') return;
       const now = ctx.currentTime;
 
+      // 1. Heavy CRT Power Switch Mechanical Snap + Degauss Coil Thump ("THWUMP-BZZZ")
       const degaussOsc = ctx.createOscillator();
       const degaussGain = ctx.createGain();
       degaussOsc.type = 'sawtooth';
-      degaussOsc.frequency.setValueAtTime(92, now);
-      degaussOsc.frequency.exponentialRampToValueAtTime(48, now + 0.35);
-      degaussGain.gain.setValueAtTime(0.065, now);
-      degaussGain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+      degaussOsc.frequency.setValueAtTime(118, now);
+      degaussOsc.frequency.exponentialRampToValueAtTime(52, now + 0.55);
+      degaussGain.gain.setValueAtTime(0.09, now);
+      degaussGain.gain.exponentialRampToValueAtTime(0.001, now + 0.58);
       degaussOsc.connect(degaussGain);
       degaussGain.connect(ctx.destination);
       degaussOsc.start(now);
-      degaussOsc.stop(now + 0.4);
+      degaussOsc.stop(now + 0.6);
 
+      // 2. CRT Glass Static Discharge Crackle as Electron Beam Strikes Phosphor
+      const crackleSamples = Math.max(1, Math.floor(ctx.sampleRate * 0.26));
+      const crackleBuf = ctx.createBuffer(1, crackleSamples, ctx.sampleRate);
+      const crackleData = crackleBuf.getChannelData(0);
+      for (let i = 0; i < crackleSamples; i++) {
+        crackleData[i] =
+          (Math.random() > 0.82 ? (Math.random() * 2 - 1) : 0) *
+          Math.exp(-i / (crackleSamples * 0.45));
+      }
+      const crackleSrc = ctx.createBufferSource();
+      const crackleFilter = ctx.createBiquadFilter();
+      const crackleGain = ctx.createGain();
+      crackleSrc.buffer = crackleBuf;
+      crackleFilter.type = 'bandpass';
+      crackleFilter.frequency.setValueAtTime(3400, now + 0.04);
+      crackleGain.gain.setValueAtTime(0.075, now + 0.04);
+      crackleGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      crackleSrc.connect(crackleFilter);
+      crackleFilter.connect(crackleGain);
+      crackleGain.connect(ctx.destination);
+      crackleSrc.start(now + 0.04);
+
+      // 3. High-Voltage CRT Flyback Transformer Whine Ramping Up
       const sweepOsc = ctx.createOscillator();
       const sweepGain = ctx.createGain();
       sweepOsc.type = 'sine';
-      sweepOsc.frequency.setValueAtTime(180, now + 0.06);
-      sweepOsc.frequency.exponentialRampToValueAtTime(2800, now + 0.5);
-      sweepGain.gain.setValueAtTime(0.032, now + 0.06);
-      sweepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.54);
+      sweepOsc.frequency.setValueAtTime(220, now + 0.05);
+      sweepOsc.frequency.exponentialRampToValueAtTime(6400, now + 0.88);
+      sweepGain.gain.setValueAtTime(0.036, now + 0.05);
+      sweepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.92);
       sweepOsc.connect(sweepGain);
       sweepGain.connect(ctx.destination);
-      sweepOsc.start(now + 0.06);
-      sweepOsc.stop(now + 0.56);
+      sweepOsc.start(now + 0.05);
+      sweepOsc.stop(now + 0.95);
 
-      for (let i = 0; i < 10; i++) {
-        const tickTime = now + 0.48 + i * 0.045;
+      // 4. Memory Bank Verification Chimes
+      for (let i = 0; i < 12; i++) {
+        const tickTime = now + 0.55 + i * 0.048;
         const tickOsc = ctx.createOscillator();
         const tickGain = ctx.createGain();
         tickOsc.type = 'square';
-        tickOsc.frequency.setValueAtTime(1380 + i * 50, tickTime);
-        tickGain.gain.setValueAtTime(0.02, tickTime);
-        tickGain.gain.exponentialRampToValueAtTime(0.001, tickTime + 0.018);
+        tickOsc.frequency.setValueAtTime(1280 + i * 55, tickTime);
+        tickGain.gain.setValueAtTime(0.022, tickTime);
+        tickGain.gain.exponentialRampToValueAtTime(0.001, tickTime + 0.02);
         tickOsc.connect(tickGain);
         tickGain.connect(ctx.destination);
         tickOsc.start(tickTime);
-        tickOsc.stop(tickTime + 0.022);
+        tickOsc.stop(tickTime + 0.024);
       }
 
+      // 5. Classic BIOS POST Beep ("BEEP!")
       const postBeep = ctx.createOscillator();
       const postGain = ctx.createGain();
       postBeep.type = 'square';
-      postBeep.frequency.setValueAtTime(1046.5, now + 0.98);
-      postGain.gain.setValueAtTime(0.05, now + 0.98);
-      postGain.gain.exponentialRampToValueAtTime(0.001, now + 1.12);
+      postBeep.frequency.setValueAtTime(1046.5, now + 1.18);
+      postGain.gain.setValueAtTime(0.055, now + 1.18);
+      postGain.gain.exponentialRampToValueAtTime(0.001, now + 1.36);
       postBeep.connect(postGain);
       postGain.connect(ctx.destination);
-      postBeep.start(now + 0.98);
-      postBeep.stop(now + 1.15);
+      postBeep.start(now + 1.18);
+      postBeep.stop(now + 1.38);
     } catch {
       // Ignore
     }
